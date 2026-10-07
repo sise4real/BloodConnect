@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMongoAuth } from '../contexts/MongoAuthContext';
+import { useMongoAuth } from '../contexts/useMongoAuth';
 import { Logo } from './Logo';
 import { MapPin, Mail, Lock, User, Phone, Droplet, AlertCircle } from 'lucide-react';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -11,7 +11,7 @@ export function MongoAuth() {
     password: '',
     fullName: '',
     phone: '',
-    role: 'donor',
+    role: 'donor' as 'donor' | 'recipient' | 'hospital',
     bloodType: 'A+',
     address: '',
     city: '',
@@ -41,8 +41,8 @@ export function MongoAuth() {
         const userData = {
           ...formData,
           location: {
-            type: 'Point',
-            coordinates: [coordinates.longitude, coordinates.latitude],
+            type: 'Point' as const,
+            coordinates: [coordinates.longitude, coordinates.latitude] as [number, number],
             address: formData.address,
             city: formData.city,
             state: formData.state
@@ -51,8 +51,8 @@ export function MongoAuth() {
 
         await signUp(userData);
       }
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -139,7 +139,7 @@ export function MongoAuth() {
                     </label>
                     <select
                       value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value as 'donor' | 'recipient' | 'hospital' })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition"
                     >
                       <option value="donor">Donor</option>

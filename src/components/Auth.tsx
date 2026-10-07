@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { UserRole, BloodGroup } from '../lib/supabase';
 import { bloodGroups } from '../lib/utils';
 import { Heart, AlertCircle } from 'lucide-react';
@@ -39,8 +39,8 @@ export default function Auth() {
           pincode: formData.pincode,
         });
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }

@@ -20,7 +20,8 @@ export const register = async (req, res) => {
       email,
       password,
       fullName,
-      role: role || 'donor',
+      // Keep public roles available while preventing self assignment of admin.
+      role: ['donor', 'recipient', 'hospital'].includes(role) ? role : 'donor',
       bloodType,
       phone,
       location,
@@ -35,6 +36,7 @@ export const register = async (req, res) => {
       fullName: user.fullName,
       role: user.role,
       bloodType: user.bloodType,
+      location: user.location,
       token
     });
   } catch (error) {

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useMongoAuth } from '../contexts/MongoAuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useMongoAuth } from '../contexts/useMongoAuth';
 import { Logo } from './Logo';
 import { MapView } from './MapView';
 import { BloodRequestCard } from './BloodRequestCard';
@@ -19,18 +19,49 @@ import {
   Clock
 } from 'lucide-react';
 
+interface GeoLocation {
+  coordinates: [number, number];
+  address?: string;
+  city?: string;
+  state?: string;
+  venue?: string;
+}
+interface MongoBloodRequest {
+  _id: string;
+  patientName: string;
+  bloodType: string;
+  urgency: 'critical' | 'urgent' | 'normal';
+  unitsNeeded: number;
+  reason: string;
+  status: string;
+  requiredBy: string;
+  requester: { _id: string; fullName: string; phone: string };
+  location: GeoLocation;
+  hospital: { name: string; phone: string; address: string };
+}
+interface MongoCamp { _id: string; name: string; date: string; description?: string; location: GeoLocation }
+interface MongoBank { _id: string; name: string; location: GeoLocation; contact: { phone: string }; hours?: string }
+interface MongoDonor {
+  _id: string;
+  fullName: string;
+  bloodType?: string;
+  donationsCount?: number;
+  location?: GeoLocation;
+}
+interface MongoNotification { _id: string; title: string; message: string; isRead: boolean; createdAt: string }
+interface Eligibility { isEligible: boolean; message: string; reasons?: string[] }
+
 export function MongoDashboard() {
   const { user, token, signOut } = useMongoAuth();
   const [activeTab, setActiveTab] = useState('requests');
-  const [bloodRequests, setBloodRequests] = useState<any[]>([]);
-  const [donors, setDonors] = useState<any[]>([]);
-  const [camps, setCamps] = useState<any[]>([]);
-  const [bloodBanks, setBloodBanks] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [bloodRequests, setBloodRequests] = useState<MongoBloodRequest[]>([]);
+  const [donors, setDonors] = useState<MongoDonor[]>([]);
+  const [camps, setCamps] = useState<MongoCamp[]>([]);
+  const [bloodBanks, setBloodBanks] = useState<MongoBank[]>([]);
+  const [notifications, setNotifications] = useState<MongoNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [eligibility, setEligibility] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [requestForm, setRequestForm] = useState({
     patientName: '',
@@ -42,9 +73,8 @@ export function MongoDashboard() {
     requiredBy: ''
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
     try {
       const [requestsData, campsData, banksData, notificationsData, unreadData] = await Promise.all([
         api.bloodRequests.getAll({ status: 'approved' }, token),
@@ -65,10 +95,8 @@ export function MongoDashboard() {
       }
     } catch (error) {
       console.error('Failed to load data:', error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [token, user?.role]);
 
   const searchDonors = async (bloodType?: string) => {
     if (!token) return;
@@ -91,7 +119,7 @@ export function MongoDashboard() {
 
   useEffect(() => {
     loadData();
-  }, [token]);
+  }, [loadData]);
 
   const handleCreateRequest = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase, DonationCamp } from '../lib/supabase';
 import { Calendar, MapPin, Phone, Clock } from 'lucide-react';
 
@@ -7,11 +7,7 @@ export default function DonationCampsList() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'upcoming' | 'all'>('upcoming');
 
-  useEffect(() => {
-    fetchCamps();
-  }, [filter]);
-
-  const fetchCamps = async () => {
+  const fetchCamps = useCallback(async () => {
     setLoading(true);
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -34,7 +30,11 @@ export default function DonationCampsList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    void fetchCamps();
+  }, [fetchCamps]);
 
   const formatCampDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
