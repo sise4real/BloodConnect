@@ -1,31 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
-
-interface User {
-  _id: string;
-  email: string;
-  fullName: string;
-  role: string;
-  bloodType?: string;
-  location?: any;
-  phone?: string;
-  availability?: boolean;
-}
-
-interface AuthContextType {
-  user: User | null;
-  token: string | null;
-  loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (data: any) => Promise<void>;
-  signOut: () => void;
-  updateUser: (data: any) => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { MongoAuthContext } from './mongoAuthContextValue';
+import type { MongoUser, RegistrationData } from './mongoAuthContextValue';
 
 export function MongoAuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<MongoUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -48,7 +27,7 @@ export function MongoAuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('user', JSON.stringify(data));
   };
 
-  const signUp = async (userData: any) => {
+  const signUp = async (userData: RegistrationData) => {
     const data = await api.auth.register(userData);
     setToken(data.token);
     setUser(data);
@@ -63,7 +42,7 @@ export function MongoAuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('user');
   };
 
-  const updateUser = async (userData: any) => {
+  const updateUser = async (userData: Partial<MongoUser>) => {
     if (!token) return;
     const data = await api.auth.updateProfile(userData, token);
     setUser({ ...user, ...data });
@@ -71,16 +50,8 @@ export function MongoAuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, signIn, signUp, signOut, updateUser }}>
+    <MongoAuthContext.Provider value={{ user, token, loading, signIn, signUp, signOut, updateUser }}>
       {children}
-    </AuthContext.Provider>
+    </MongoAuthContext.Provider>
   );
-}
-
-export function useMongoAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useMongoAuth must be used within MongoAuthProvider');
-  }
-  return context;
 }

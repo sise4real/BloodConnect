@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/useAuth';
 import { supabase, BloodRequest, DonationCamp, Notification } from '../lib/supabase';
-import { Heart, Search, Calendar, Bell, User, LogOut, MapPin, Droplet, AlertCircle, Menu, X, Navigation } from 'lucide-react';
+import { Heart, Calendar, Bell, User, MapPin, Droplet, AlertCircle, Menu, X, Navigation } from 'lucide-react';
 import { formatDateTime, getUrgencyColor } from '../lib/utils';
 import BloodRequestForm from './BloodRequestForm';
 import DonorSearch from './DonorSearch';
@@ -21,12 +21,6 @@ export default function MobileDashboard() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-
-  useEffect(() => {
-    fetchBloodRequests();
-    fetchUpcomingCamps();
-    fetchNotifications();
-  }, []);
 
   const fetchBloodRequests = async () => {
     const { data, error } = await supabase
@@ -56,7 +50,7 @@ export default function MobileDashboard() {
     }
   };
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     if (!profile?.id) return;
     const { data, error } = await supabase
       .from('notifications')
@@ -68,7 +62,13 @@ export default function MobileDashboard() {
     if (!error && data) {
       setNotifications(data);
     }
-  };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    fetchBloodRequests();
+    fetchUpcomingCamps();
+    void fetchNotifications();
+  }, [fetchNotifications]);
 
   const markNotificationAsRead = async (id: string) => {
     await supabase

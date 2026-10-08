@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { supabase, BloodGroup, UrgencyLevel } from '../lib/supabase';
 import { bloodGroups } from '../lib/utils';
 import { AlertCircle, CheckCircle } from 'lucide-react';
@@ -57,8 +57,9 @@ export default function BloodRequestForm({ onRequestCreated }: Props) {
         hospital_name: '',
         description: '',
       });
-    } catch (err: any) {
-      setError(err.message || 'Failed to create request');
+    } catch (err: unknown) {
+      const message = (err as { message?: unknown } | null)?.message;
+      setError(typeof message === 'string' && message ? message : 'Failed to create request');
     } finally {
       setLoading(false);
     }

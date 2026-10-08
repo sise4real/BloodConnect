@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { supabase, BloodBank, BloodGroup } from '../lib/supabase';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase, BloodBank } from '../lib/supabase';
 import { MapPin, Phone, Mail, Clock, Droplet } from 'lucide-react';
 import { bloodGroups } from '../lib/utils';
 
@@ -8,11 +8,7 @@ export default function BloodBanksList() {
   const [loading, setLoading] = useState(true);
   const [cityFilter, setCityFilter] = useState('');
 
-  useEffect(() => {
-    fetchBloodBanks();
-  }, [cityFilter]);
-
-  const fetchBloodBanks = async () => {
+  const fetchBloodBanks = useCallback(async () => {
     setLoading(true);
     try {
       let query = supabase
@@ -34,7 +30,11 @@ export default function BloodBanksList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [cityFilter]);
+
+  useEffect(() => {
+    void fetchBloodBanks();
+  }, [fetchBloodBanks]);
 
   const getStockColor = (units: number): string => {
     if (units === 0) return 'text-gray-400';

@@ -1,4 +1,5 @@
-import { MongoAuthProvider, useMongoAuth } from './contexts/MongoAuthContext';
+import { MongoAuthProvider } from './contexts/MongoAuthContext';
+import { useMongoAuth } from './contexts/useMongoAuth';
 import { MongoAuth } from './components/MongoAuth';
 import { MongoDashboard } from './components/MongoDashboard';
 

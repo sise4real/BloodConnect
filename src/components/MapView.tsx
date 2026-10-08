@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin, Heart } from 'lucide-react';
 
 interface MapMarker {
   id: string;
@@ -19,6 +18,9 @@ interface MapViewProps {
   height?: string;
 }
 
+const DEFAULT_MAP_CENTER: [number, number] = [20.5937, 78.9629];
+const EMPTY_MARKERS: MapMarker[] = [];
+
 const iconColors = {
   donor: '#10b981',
   request: '#ef4444',
@@ -27,11 +29,13 @@ const iconColors = {
 };
 
 export function MapView({
-  center = [20.5937, 78.9629],
-  markers = [],
+  center: centerProp,
+  markers: markersProp,
   zoom = 5,
   height = '400px'
 }: MapViewProps) {
+  const center = centerProp ?? DEFAULT_MAP_CENTER;
+  const markers = markersProp ?? EMPTY_MARKERS;
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
 
@@ -52,7 +56,7 @@ export function MapView({
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [center, zoom]);
 
   useEffect(() => {
     if (!mapInstanceRef.current) return;

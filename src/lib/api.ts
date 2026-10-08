@@ -7,13 +7,11 @@ interface RequestOptions extends RequestInit {
 async function request(endpoint: string, options: RequestOptions = {}) {
   const { token, ...fetchOptions } = options;
 
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...fetchOptions.headers,
-  };
+  const headers = new Headers(fetchOptions.headers);
+  headers.set('Content-Type', 'application/json');
 
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {
@@ -30,18 +28,27 @@ async function request(endpoint: string, options: RequestOptions = {}) {
   return data;
 }
 
+type QueryParams = Record<string, string | number | boolean | undefined>;
+const encodeQuery = (params: QueryParams) => {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined) query.set(key, String(value));
+  });
+  return query.toString();
+};
+
 export const api = {
   auth: {
-    register: (data: any) => request('/auth/register', {
+    register: (data: unknown) => request('/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
-    login: (credentials: any) => request('/auth/login', {
+    login: (credentials: unknown) => request('/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     }),
     getProfile: (token: string) => request('/auth/profile', { token }),
-    updateProfile: (data: any, token: string) => request('/auth/profile', {
+    updateProfile: (data: unknown, token: string) => request('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
@@ -49,27 +56,27 @@ export const api = {
   },
 
   bloodRequests: {
-    getAll: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    getAll: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/blood-requests?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/blood-requests/${id}`, { token }),
-    create: (data: any, token: string) => request('/blood-requests', {
+    create: (data: unknown, token: string) => request('/blood-requests', {
       method: 'POST',
       body: JSON.stringify(data),
       token,
     }),
-    respond: (id: string, data: any, token: string) => request(`/blood-requests/${id}/respond`, {
+    respond: (id: string, data: unknown, token: string) => request(`/blood-requests/${id}/respond`, {
       method: 'POST',
       body: JSON.stringify(data),
       token,
     }),
-    moderate: (id: string, data: any, token: string) => request(`/blood-requests/${id}/moderate`, {
+    moderate: (id: string, data: unknown, token: string) => request(`/blood-requests/${id}/moderate`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
     }),
-    updateResponseStatus: (id: string, data: any, token: string) =>
+    updateResponseStatus: (id: string, data: unknown, token: string) =>
       request(`/blood-requests/${id}/response-status`, {
         method: 'PUT',
         body: JSON.stringify(data),
@@ -82,14 +89,14 @@ export const api = {
   },
 
   donors: {
-    search: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    search: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/donors/search?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/donors/${id}`, { token }),
     getStats: (token: string) => request('/donors/stats', { token }),
     checkEligibility: (token: string) => request('/donors/eligibility', { token }),
-    updateDonationHistory: (data: any, token: string) => request('/donors/donation-history', {
+    updateDonationHistory: (data: unknown, token: string) => request('/donors/donation-history', {
       method: 'POST',
       body: JSON.stringify(data),
       token,
@@ -97,12 +104,12 @@ export const api = {
   },
 
   camps: {
-    getAll: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    getAll: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/camps?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/camps/${id}`, { token }),
-    create: (data: any, token: string) => request('/camps', {
+    create: (data: unknown, token: string) => request('/camps', {
       method: 'POST',
       body: JSON.stringify(data),
       token,
@@ -111,7 +118,7 @@ export const api = {
       method: 'POST',
       token,
     }),
-    moderate: (id: string, data: any, token: string) => request(`/camps/${id}/moderate`, {
+    moderate: (id: string, data: unknown, token: string) => request(`/camps/${id}/moderate`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
@@ -123,22 +130,22 @@ export const api = {
   },
 
   bloodBanks: {
-    getAll: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    getAll: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/blood-banks?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/blood-banks/${id}`, { token }),
-    create: (data: any, token: string) => request('/blood-banks', {
+    create: (data: unknown, token: string) => request('/blood-banks', {
       method: 'POST',
       body: JSON.stringify(data),
       token,
     }),
-    update: (id: string, data: any, token: string) => request(`/blood-banks/${id}`, {
+    update: (id: string, data: unknown, token: string) => request(`/blood-banks/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
     }),
-    moderate: (id: string, data: any, token: string) => request(`/blood-banks/${id}/moderate`, {
+    moderate: (id: string, data: unknown, token: string) => request(`/blood-banks/${id}/moderate`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
@@ -152,11 +159,11 @@ export const api = {
   admin: {
     getDashboard: (token: string) => request('/admin/dashboard', { token }),
     getPending: (token: string) => request('/admin/pending', { token }),
-    getUsers: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    getUsers: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/admin/users?${query}`, { token });
     },
-    updateUser: (id: string, data: any, token: string) => request(`/admin/users/${id}`, {
+    updateUser: (id: string, data: unknown, token: string) => request(`/admin/users/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
@@ -168,8 +175,8 @@ export const api = {
   },
 
   notifications: {
-    getAll: (params: any, token: string) => {
-      const query = new URLSearchParams(params).toString();
+    getAll: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
       return request(`/notifications?${query}`, { token });
     },
     getUnreadCount: (token: string) => request('/notifications/unread-count', { token }),

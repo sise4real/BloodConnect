@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/useAuth';
 import { supabase, BloodRequest, DonationCamp, Notification } from '../lib/supabase';
 import { Heart, Search, Calendar, Bell, User, LogOut, MapPin, Droplet, AlertCircle } from 'lucide-react';
 import { formatDateTime, getUrgencyColor } from '../lib/utils';
@@ -19,12 +19,6 @@ export default function Dashboard() {
   const [upcomingCamps, setUpcomingCamps] = useState<DonationCamp[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-
-  useEffect(() => {
-    fetchBloodRequests();
-    fetchUpcomingCamps();
-    fetchNotifications();
-  }, []);
 
   const fetchBloodRequests = async () => {
     const { data, error } = await supabase
@@ -54,7 +48,7 @@ export default function Dashboard() {
     }
   };
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     if (!profile?.id) return;
     const { data, error } = await supabase
       .from('notifications')
@@ -66,7 +60,13 @@ export default function Dashboard() {
     if (!error && data) {
       setNotifications(data);
     }
-  };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    fetchBloodRequests();
+    fetchUpcomingCamps();
+    void fetchNotifications();
+  }, [fetchNotifications]);
 
   const markNotificationAsRead = async (id: string) => {
     await supabase

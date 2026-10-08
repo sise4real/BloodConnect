@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../contexts/useAuth';
 import { supabase, BloodGroup, DonationHistory } from '../lib/supabase';
 import { bloodGroups, canDonateBlood, formatDate } from '../lib/utils';
 import { User, Droplet, Calendar, Phone, MapPin, CheckCircle, AlertCircle } from 'lucide-react';
@@ -21,13 +21,7 @@ export default function ProfileView() {
     is_available: profile?.is_available ?? true,
   });
 
-  useEffect(() => {
-    if (profile?.role === 'donor') {
-      fetchDonationHistory();
-    }
-  }, [profile]);
-
-  const fetchDonationHistory = async () => {
+  const fetchDonationHistory = useCallback(async () => {
     if (!profile?.id) return;
     const { data, error } = await supabase
       .from('donation_history')
@@ -38,7 +32,13 @@ export default function ProfileView() {
     if (!error && data) {
       setDonationHistory(data);
     }
-  };
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (profile?.role === 'donor') {
+      void fetchDonationHistory();
+    }
+  }, [fetchDonationHistory, profile?.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,8 +65,9 @@ export default function ProfileView() {
       await refreshProfile();
       setSuccess(true);
       setEditing(false);
-    } catch (err: any) {
-      setError(err.message || 'Failed to update profile');
+    } catch (err: unknown) {
+      const message = (err as { message?: unknown } | null)?.message;
+      setError(typeof message === 'string' && message ? message : 'Failed to update profile');
     } finally {
       setLoading(false);
     }

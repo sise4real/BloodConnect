@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase, Profile, BloodRequest, BloodBank } from '../lib/supabase';
+import { supabase, BloodRequest, BloodBank } from '../lib/supabase';
 import { Users, AlertCircle, MapPin, TrendingUp, CheckCircle, XCircle } from 'lucide-react';
 
 export default function AdminPanel() {

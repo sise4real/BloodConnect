@@ -30,7 +30,7 @@ export default function NearbyDonors() {
         lat: position.coords.latitude,
         lng: position.coords.longitude,
       });
-    } catch (err) {
+    } catch {
       setError('Please enable location services to find nearby donors');
     } finally {
       setLocationLoading(false);
@@ -81,8 +81,8 @@ export default function NearbyDonors() {
         .sort((a, b) => (a.distance || 0) - (b.distance || 0));
 
       setDonors(donorsWithDistance);
-    } catch (err: any) {
-      setError(err.message || 'Failed to search donors');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to search donors');
     } finally {
       setLoading(false);
     }

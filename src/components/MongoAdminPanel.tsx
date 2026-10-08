@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useMongoAuth } from '../contexts/MongoAuthContext';
-import { Logo } from './Logo';
+import { useState, useEffect, useCallback } from 'react';
+import { useMongoAuth } from '../contexts/useMongoAuth';
 import { api } from '../lib/api';
 import {
   LogOut,
@@ -15,28 +14,55 @@ import {
   Shield
 } from 'lucide-react';
 
+interface AdminUser { _id: string; fullName: string; email: string; role: string; bloodType?: string; isActive: boolean }
+interface AdminItem {
+  _id: string;
+  name?: string;
+  patientName?: string;
+  bloodType?: string;
+  status?: string;
+  urgency?: string;
+  unitsNeeded?: number;
+  reason?: string;
+  requiredBy?: string;
+  hospital?: { name?: string; address?: string };
+  requester?: { fullName?: string; email?: string };
+  organizer?: { fullName?: string; email?: string };
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  description?: string;
+  location?: { address?: string; city?: string; venue?: string };
+  contact?: { phone?: string };
+  hours?: string;
+}
+interface DashboardStats {
+  users: { total: number; activeDonors: number };
+  requests: { total: number; pending: number };
+  camps: { active: number; pending: number };
+  bloodBanks: { approved: number; pending: number };
+  recent: { requests: AdminItem[]; users: AdminUser[] };
+}
+interface PendingItems { requests: AdminItem[]; camps: AdminItem[]; bloodBanks: AdminItem[] }
+
 export function AdminPanel() {
   const { user, token, signOut } = useMongoAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState<any>(null);
-  const [pending, setPending] = useState<any>({ requests: [], camps: [], bloodBanks: [] });
-  const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [pending, setPending] = useState<PendingItems>({ requests: [], camps: [], bloodBanks: [] });
+  const [users, setUsers] = useState<AdminUser[]>([]);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     if (!token) return;
-    setLoading(true);
     try {
       const data = await api.admin.getDashboard(token);
       setStats(data);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [token]);
 
-  const loadPending = async () => {
+  const loadPending = useCallback(async () => {
     if (!token) return;
     try {
       const data = await api.admin.getPending(token);
@@ -44,7 +70,7 @@ export function AdminPanel() {
     } catch (error) {
       console.error('Failed to load pending items:', error);
     }
-  };
+  }, [token]);
 
   const loadUsers = async () => {
     if (!token) return;
@@ -57,9 +83,9 @@ export function AdminPanel() {
   };
 
   useEffect(() => {
-    loadDashboard();
-    loadPending();
-  }, [token]);
+    void loadDashboard();
+    void loadPending();
+  }, [loadDashboard, loadPending]);
 
   const handleModerateRequest = async (id: string, status: string, notes: string = '') => {
     if (!token) return;
@@ -208,7 +234,7 @@ export function AdminPanel() {
                       Recent Requests
                     </h3>
                     <div className="space-y-3">
-                      {stats.recent.requests.slice(0, 5).map((req: any) => (
+                      {stats.recent.requests.slice(0, 5).map((req) => (
                         <div key={req._id} className="flex justify-between items-center text-sm">
                           <div>
                             <div className="font-medium text-gray-900">{req.patientName}</div>
@@ -232,7 +258,7 @@ export function AdminPanel() {
                       Recent Users
                     </h3>
                     <div className="space-y-3">
-                      {stats.recent.users.slice(0, 5).map((u: any) => (
+                      {stats.recent.users.slice(0, 5).map((u) => (
                         <div key={u._id} className="flex justify-between items-center text-sm">
                           <div>
                             <div className="font-medium text-gray-900">{u.fullName}</div>
@@ -260,7 +286,7 @@ export function AdminPanel() {
                       Blood Requests ({pending.requests.length})
                     </h3>
                     <div className="space-y-4">
-                      {pending.requests.map((req: any) => (
+                      {pending.requests.map((req) => (
                         <div key={req._id} className="bg-white border border-gray-200 rounded-lg p-6">
                           <div className="flex justify-between items-start mb-4">
                             <div>
@@ -284,7 +310,7 @@ export function AdminPanel() {
                               <strong>Urgency:</strong> <span className="capitalize font-medium">{req.urgency}</span>
                             </div>
                             <div className="text-sm text-gray-700">
-                              <strong>Required by:</strong> {new Date(req.requiredBy).toLocaleDateString()}
+                              <strong>Required by:</strong> {new Date(req.requiredBy || '').toLocaleDateString()}
                             </div>
                           </div>
 
@@ -320,14 +346,14 @@ export function AdminPanel() {
                       Donation Camps ({pending.camps.length})
                     </h3>
                     <div className="space-y-4">
-                      {pending.camps.map((camp: any) => (
+                      {pending.camps.map((camp) => (
                         <div key={camp._id} className="bg-white border border-gray-200 rounded-lg p-6">
                           <h4 className="font-bold text-gray-900 text-lg mb-2">{camp.name}</h4>
                           <div className="text-sm text-gray-600 mb-4">
                             Organized by: {camp.organizer?.fullName} ({camp.organizer?.email})
                           </div>
                           <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-2 text-sm text-gray-700">
-                            <div><strong>Date:</strong> {new Date(camp.date).toLocaleDateString()}</div>
+                            <div><strong>Date:</strong> {new Date(camp.date || '').toLocaleDateString()}</div>
                             <div><strong>Time:</strong> {camp.startTime} - {camp.endTime}</div>
                             <div><strong>Venue:</strong> {camp.location?.venue}</div>
                             <div><strong>Description:</strong> {camp.description}</div>
@@ -364,7 +390,7 @@ export function AdminPanel() {
                       Blood Banks ({pending.bloodBanks.length})
                     </h3>
                     <div className="space-y-4">
-                      {pending.bloodBanks.map((bank: any) => (
+                      {pending.bloodBanks.map((bank) => (
                         <div key={bank._id} className="bg-white border border-gray-200 rounded-lg p-6">
                           <h4 className="font-bold text-gray-900 text-lg mb-4">{bank.name}</h4>
                           <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-2 text-sm text-gray-700">
