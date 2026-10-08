@@ -66,7 +66,8 @@ export default function ProfileView() {
       setSuccess(true);
       setEditing(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update profile');
+      const message = (err as { message?: unknown } | null)?.message;
+      setError(typeof message === 'string' && message ? message : 'Failed to update profile');
     } finally {
       setLoading(false);
     }

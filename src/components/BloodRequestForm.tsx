@@ -58,7 +58,8 @@ export default function BloodRequestForm({ onRequestCreated }: Props) {
         description: '',
       });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create request');
+      const message = (err as { message?: unknown } | null)?.message;
+      setError(typeof message === 'string' && message ? message : 'Failed to create request');
     } finally {
       setLoading(false);
     }
