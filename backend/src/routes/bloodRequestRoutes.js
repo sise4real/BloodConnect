@@ -6,6 +6,7 @@ import {
   respondToRequest,
   moderateBloodRequest,
   updateResponseStatus,
+  verifyLivesSaved,
   deleteBloodRequest
 } from '../controllers/bloodRequestController.js';
 import { protect, adminOnly } from '../middleware/auth.js';
@@ -23,5 +24,6 @@ router.route('/:id')
 router.post('/:id/respond', protect, respondToRequest);
 router.put('/:id/moderate', protect, adminOnly, moderateBloodRequest);
 router.put('/:id/response-status', protect, updateResponseStatus);
+router.put('/:id/lives-saved', protect, adminOnly, verifyLivesSaved);
 
 export default router;

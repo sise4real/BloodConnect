@@ -4,7 +4,8 @@ export const createCamp = async (req, res) => {
   try {
     const camp = await DonationCamp.create({
       ...req.body,
-      organizer: req.user._id
+      organizer: req.user._id,
+      status: 'pending'
     });
 
     await camp.populate('organizer', 'fullName email phone');
@@ -18,14 +19,14 @@ export const createCamp = async (req, res) => {
 export const getCamps = async (req, res) => {
   try {
     const { status, latitude, longitude, radius } = req.query;
-
-    let query = {};
-
-    if (status) {
-      query.status = status;
-    } else {
-      query.status = { $in: ['approved', 'active'] };
+    const publicStatuses = ['approved', 'active'];
+    if (status && !publicStatuses.includes(status)) {
+      return res.status(403).json({ message: 'Only approved and active camps are publicly listed' });
     }
+    const query = {
+      status: status ? status : { $in: publicStatuses },
+      date: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+    };
 
     if (latitude && longitude) {
       query.location = {
@@ -51,6 +52,18 @@ export const getCamps = async (req, res) => {
   }
 };
 
+export const getManagedCamps = async (req, res) => {
+  try {
+    const query = req.user.role === 'admin' ? {} : { organizer: req.user._id };
+    const camps = await DonationCamp.find(query)
+      .populate('organizer', 'fullName')
+      .sort({ date: 1 });
+    res.json(camps);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 export const getCampById = async (req, res) => {
   try {
     const camp = await DonationCamp.findById(req.params.id)
@@ -59,6 +72,10 @@ export const getCampById = async (req, res) => {
       .populate('moderatedBy', 'fullName');
 
     if (!camp) {
+      return res.status(404).json({ message: 'Camp not found' });
+    }
+
+    if (!['approved', 'active'].includes(camp.status) && req.user.role !== 'admin' && camp.organizer.toString() !== req.user._id.toString()) {
       return res.status(404).json({ message: 'Camp not found' });
     }
 
@@ -107,6 +124,10 @@ export const moderateCamp = async (req, res) => {
       return res.status(404).json({ message: 'Camp not found' });
     }
 
+    if (!['pending', 'approved', 'rejected', 'active', 'completed', 'cancelled'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid camp status' });
+    }
+
     camp.status = status;
     camp.moderationNotes = moderationNotes;
     camp.moderatedBy = req.user._id;
@@ -115,6 +136,25 @@ export const moderateCamp = async (req, res) => {
     await camp.save();
     await camp.populate('moderatedBy', 'fullName');
 
+    res.json(camp);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const updateCamp = async (req, res) => {
+  try {
+    const camp = await DonationCamp.findById(req.params.id);
+    if (!camp) return res.status(404).json({ message: 'Camp not found' });
+    if (req.user.role !== 'admin' && camp.organizer.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'You can only manage camps you created' });
+    }
+
+    for (const field of ['name', 'description', 'location', 'date', 'startTime', 'endTime', 'contactInfo', 'capacity']) {
+      if (req.body[field] !== undefined) camp[field] = req.body[field];
+    }
+    await camp.save();
+    await camp.populate('organizer', 'fullName email phone');
     res.json(camp);
   } catch (error) {
     res.status(400).json({ message: error.message });

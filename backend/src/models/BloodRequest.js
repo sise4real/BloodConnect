@@ -54,6 +54,13 @@ const bloodRequestSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  livesSavedCount: { type: Number, min: 1 },
+  livesSavedEvidence: String,
+  livesSavedVerifiedAt: Date,
+  livesSavedVerifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   responses: [{
     donor: {
       type: mongoose.Schema.Types.ObjectId,
@@ -67,6 +74,11 @@ const bloodRequestSchema = new mongoose.Schema({
     respondedAt: {
       type: Date,
       default: Date.now
+    },
+    verifiedAt: Date,
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     },
     notes: String
   }],

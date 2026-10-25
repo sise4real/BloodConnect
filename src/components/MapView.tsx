@@ -44,7 +44,7 @@ export function MapView({
 
     const map = L.map(mapRef.current).setView(center, zoom);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
@@ -119,9 +119,11 @@ export function MapView({
       }
     });
 
-    if (markers.length > 0) {
+    if (markers.length === 1) {
+      map.setView(markers[0].position, zoom);
+    } else if (markers.length > 1) {
       const bounds = L.latLngBounds(markers.map(m => m.position));
-      map.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
     } else {
       map.setView(center, zoom);
     }

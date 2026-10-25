@@ -38,6 +38,10 @@ const encodeQuery = (params: QueryParams) => {
 };
 
 export const api = {
+  publicStats: {
+    get: () => request('/public/stats'),
+  },
+
   auth: {
     register: (data: unknown) => request('/auth/register', {
       method: 'POST',
@@ -82,6 +86,11 @@ export const api = {
         body: JSON.stringify(data),
         token,
       }),
+    verifyLivesSaved: (id: string, data: unknown, token: string) => request(`/blood-requests/${id}/lives-saved`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      token,
+    }),
     delete: (id: string, token: string) => request(`/blood-requests/${id}`, {
       method: 'DELETE',
       token,
@@ -109,6 +118,7 @@ export const api = {
       return request(`/camps?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/camps/${id}`, { token }),
+    getManaged: (token: string) => request('/camps/manage', { token }),
     create: (data: unknown, token: string) => request('/camps', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -119,6 +129,11 @@ export const api = {
       token,
     }),
     moderate: (id: string, data: unknown, token: string) => request(`/camps/${id}/moderate`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      token,
+    }),
+    update: (id: string, data: unknown, token: string) => request(`/camps/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
@@ -135,6 +150,7 @@ export const api = {
       return request(`/blood-banks?${query}`, { token });
     },
     getById: (id: string, token: string) => request(`/blood-banks/${id}`, { token }),
+    getManaged: (token: string) => request('/blood-banks/manage', { token }),
     create: (data: unknown, token: string) => request('/blood-banks', {
       method: 'POST',
       body: JSON.stringify(data),

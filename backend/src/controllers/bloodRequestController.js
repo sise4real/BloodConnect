@@ -156,9 +156,19 @@ export const updateResponseStatus = async (req, res) => {
       return res.status(403).json({ message: 'Only requester can update response status' });
     }
 
+    if (!['accepted', 'rejected', 'completed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid response status' });
+    }
+
+    if (response.verifiedAt && status !== 'completed') {
+      return res.status(400).json({ message: 'A verified completed donation cannot be changed' });
+    }
+
     response.status = status;
 
-    if (status === 'completed') {
+    if (status === 'completed' && !response.verifiedAt) {
+      response.verifiedAt = new Date();
+      response.verifiedBy = req.user._id;
       const donor = await User.findById(response.donor);
       if (donor) {
         donor.donationsCount += 1;
@@ -169,6 +179,37 @@ export const updateResponseStatus = async (req, res) => {
 
     await bloodRequest.save();
     res.json(bloodRequest);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const verifyLivesSaved = async (req, res) => {
+  try {
+    const { livesSavedCount, evidence } = req.body;
+    const count = Number(livesSavedCount);
+    if (!Number.isInteger(count) || count < 1 || typeof evidence !== 'string' || !evidence.trim()) {
+      return res.status(400).json({ message: 'Enter a positive whole number and supporting evidence' });
+    }
+
+    const bloodRequest = await BloodRequest.findById(req.params.id);
+    if (!bloodRequest) return res.status(404).json({ message: 'Blood request not found' });
+    if (bloodRequest.status !== 'fulfilled') {
+      return res.status(400).json({ message: 'Only fulfilled requests can document lives saved' });
+    }
+    if (bloodRequest.livesSavedVerifiedAt) {
+      return res.status(409).json({ message: 'Lives saved has already been verified for this request' });
+    }
+    if (!bloodRequest.responses.some(response => response.status === 'completed' && response.verifiedAt && response.verifiedBy)) {
+      return res.status(400).json({ message: 'A completed donation must be verified before recording lives saved' });
+    }
+
+    bloodRequest.livesSavedCount = count;
+    bloodRequest.livesSavedEvidence = evidence.trim();
+    bloodRequest.livesSavedVerifiedAt = new Date();
+    bloodRequest.livesSavedVerifiedBy = req.user._id;
+    await bloodRequest.save();
+    res.json({ message: 'Lives saved milestone recorded', bloodRequest });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

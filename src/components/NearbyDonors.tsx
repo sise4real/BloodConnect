@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase, Profile, BloodGroup } from '../lib/supabase';
 import { bloodGroups, canDonateBlood, calculateDistance } from '../lib/utils';
 import { MapPin, Phone, Droplet, Navigation, Loader } from 'lucide-react';
-import { getCurrentPosition } from '../lib/pwa';
+import { getCurrentPosition, getGeolocationErrorMessage } from '../lib/pwa';
 
 interface DonorWithDistance extends Profile {
   distance?: number;
@@ -17,10 +17,6 @@ export default function NearbyDonors() {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    getUserLocation();
-  }, []);
-
   const getUserLocation = async () => {
     setLocationLoading(true);
     setError('');
@@ -30,8 +26,8 @@ export default function NearbyDonors() {
         lat: position.coords.latitude,
         lng: position.coords.longitude,
       });
-    } catch {
-      setError('Please enable location services to find nearby donors');
+    } catch (locationError: unknown) {
+      setError(getGeolocationErrorMessage(locationError));
     } finally {
       setLocationLoading(false);
     }

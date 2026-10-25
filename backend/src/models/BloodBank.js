@@ -1,6 +1,10 @@
 import mongoose from 'mongoose';
 
 const bloodBankSchema = new mongoose.Schema({
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
   name: {
     type: String,
     required: true

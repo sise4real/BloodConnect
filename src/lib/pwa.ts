@@ -28,3 +28,21 @@ export function getCurrentPosition(): Promise<GeolocationPosition> {
     }
   });
 }
+
+export function getGeolocationErrorMessage(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? (error as { code?: number }).code
+    : undefined;
+
+  if (code === 1) {
+    return 'Location access is blocked. In Chrome, open the site controls beside the address, go to Site settings, allow Location, then reload this page.';
+  }
+  if (code === 2) {
+    return 'Your location could not be determined. Check that location services are enabled and try again.';
+  }
+  if (code === 3) {
+    return 'Location lookup timed out. Please try again.';
+  }
+  if (error instanceof Error) return error.message;
+  return 'Could not get your location. Check your browser settings and try again.';
+}

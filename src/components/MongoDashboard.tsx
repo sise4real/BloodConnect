@@ -4,6 +4,7 @@ import { Logo } from './Logo';
 import { MapView } from './MapView';
 import { BloodRequestCard } from './BloodRequestCard';
 import { AdminPanel } from './MongoAdminPanel';
+import { MongoResourceManagement } from './MongoResourceManagement';
 import { api } from '../lib/api';
 import {
   LogOut,
@@ -40,7 +41,7 @@ interface MongoBloodRequest {
   hospital: { name: string; phone: string; address: string };
 }
 interface MongoCamp { _id: string; name: string; date: string; description?: string; location: GeoLocation }
-interface MongoBank { _id: string; name: string; location: GeoLocation; contact: { phone: string }; hours?: string }
+interface MongoBank { _id: string; name: string; location: GeoLocation; contact?: { phone?: string }; hours?: string }
 interface MongoDonor {
   _id: string;
   fullName: string;
@@ -56,6 +57,10 @@ export function MongoDashboard() {
   const [activeTab, setActiveTab] = useState('requests');
   const [bloodRequests, setBloodRequests] = useState<MongoBloodRequest[]>([]);
   const [donors, setDonors] = useState<MongoDonor[]>([]);
+  const [donorBloodType, setDonorBloodType] = useState('');
+  const [donorSearchLoading, setDonorSearchLoading] = useState(false);
+  const [donorSearchError, setDonorSearchError] = useState('');
+  const [donorSearchComplete, setDonorSearchComplete] = useState(false);
   const [camps, setCamps] = useState<MongoCamp[]>([]);
   const [bloodBanks, setBloodBanks] = useState<MongoBank[]>([]);
   const [notifications, setNotifications] = useState<MongoNotification[]>([]);
@@ -78,7 +83,7 @@ export function MongoDashboard() {
     try {
       const [requestsData, campsData, banksData, notificationsData, unreadData] = await Promise.all([
         api.bloodRequests.getAll({ status: 'approved' }, token),
-        api.camps.getAll({ status: 'approved' }, token),
+        api.camps.getAll({}, token),
         api.bloodBanks.getAll({ status: 'approved' }, token),
         api.notifications.getAll({}, token),
         api.notifications.getUnreadCount(token)
@@ -100,12 +105,19 @@ export function MongoDashboard() {
 
   const searchDonors = async (bloodType?: string) => {
     if (!token) return;
+    setDonorSearchLoading(true);
+    setDonorSearchError('');
+    setDonors([]);
     try {
+      const coordinates = user?.location?.coordinates;
+      if (!coordinates || coordinates.length !== 2 || !coordinates.every(Number.isFinite)) {
+        throw new Error('Add a valid location to your profile before searching for nearby donors.');
+      }
       const data = await api.donors.search(
         {
           bloodType,
-          latitude: user?.location?.coordinates[1],
-          longitude: user?.location?.coordinates[0],
+          latitude: coordinates[1],
+          longitude: coordinates[0],
           radius: 50,
           availability: true
         },
@@ -113,7 +125,10 @@ export function MongoDashboard() {
       );
       setDonors(data);
     } catch (error) {
-      console.error('Failed to search donors:', error);
+      setDonorSearchError(error instanceof Error ? error.message : 'Donor search failed. Please try again.');
+    } finally {
+      setDonorSearchComplete(true);
+      setDonorSearchLoading(false);
     }
   };
 
@@ -176,7 +191,7 @@ export function MongoDashboard() {
       position: [bank.location.coordinates[1], bank.location.coordinates[0]] as [number, number],
       type: 'bloodbank' as const,
       title: bank.name,
-      info: bank.contact.phone
+      info: bank.contact?.phone || bank.location.address || ''
     }))
   ];
 
@@ -302,7 +317,8 @@ export function MongoDashboard() {
                 { id: 'requests', label: 'Blood Requests', icon: Droplet },
                 { id: 'donors', label: 'Find Donors', icon: Search },
                 { id: 'camps', label: 'Donation Camps', icon: Calendar },
-                { id: 'banks', label: 'Blood Banks', icon: Building2 }
+                { id: 'banks', label: 'Blood Banks', icon: Building2 },
+                ...(user?.role === 'hospital' ? [{ id: 'resources', label: 'Manage resources', icon: Building2 }] : [])
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -451,9 +467,13 @@ export function MongoDashboard() {
             {activeTab === 'donors' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Find Donors</h2>
+                <p className="mb-4 text-sm text-gray-600">
+                  Search uses your saved profile location within 50 km. Update your profile location to search another area.
+                </p>
                 <div className="flex gap-4 mb-6 flex-wrap">
                   <select
-                    onChange={(e) => searchDonors(e.target.value || undefined)}
+                    value={donorBloodType}
+                    onChange={(e) => setDonorBloodType(e.target.value)}
                     className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none"
                   >
                     <option value="">All Blood Types</option>
@@ -462,20 +482,23 @@ export function MongoDashboard() {
                     ))}
                   </select>
                   <button
-                    onClick={() => searchDonors()}
+                    onClick={() => void searchDonors(donorBloodType || undefined)}
+                    disabled={donorSearchLoading}
                     className="bg-gradient-to-r from-rose-500 to-red-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-rose-600 hover:to-red-700 transition flex items-center gap-2"
                   >
                     <Search size={18} />
-                    Search
+                    {donorSearchLoading ? 'Searching…' : 'Search'}
                   </button>
                 </div>
+                {donorSearchError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{donorSearchError}</div>}
                 <div className="grid md:grid-cols-2 gap-4">
-                  {donors.length === 0 ? (
-                    <div className="col-span-2 text-center py-12 text-gray-500">
-                      Search for donors by blood type
-                    </div>
-                  ) : (
-                    donors.map(donor => (
+                  {!donorSearchLoading && !donorSearchError && !donorSearchComplete && (
+                    <div className="col-span-2 text-center py-12 text-gray-500">Choose a blood group and search for available donors near your saved location.</div>
+                  )}
+                  {!donorSearchLoading && !donorSearchError && donorSearchComplete && donors.length === 0 && (
+                    <div className="col-span-2 text-center py-12 text-gray-500">No available donors found within 50 km for this search.</div>
+                  )}
+                  {!donorSearchLoading && !donorSearchError && donors.length > 0 && donors.map(donor => (
                       <div key={donor._id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
                         <div className="flex justify-between items-start">
                           <div>
@@ -488,8 +511,7 @@ export function MongoDashboard() {
                           <div className="text-2xl font-bold text-rose-600">{donor.bloodType}</div>
                         </div>
                       </div>
-                    ))
-                  )}
+                  ))}
                 </div>
               </div>
             )}
@@ -541,7 +563,7 @@ export function MongoDashboard() {
                             <MapPin size={16} className="text-gray-400 flex-shrink-0" />
                             <span>{bank.location.address}</span>
                           </div>
-                          <div>{bank.contact.phone}</div>
+                          {bank.contact?.phone && <div>{bank.contact.phone}</div>}
                           <div className="text-xs text-gray-600">Hours: {bank.hours}</div>
                         </div>
                       </div>
@@ -550,6 +572,8 @@ export function MongoDashboard() {
                 </div>
               </div>
             )}
+
+            {activeTab === 'resources' && user?.role === 'hospital' && <MongoResourceManagement />}
           </div>
         </div>
       </div>
