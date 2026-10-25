@@ -10,6 +10,7 @@ import campRoutes from './routes/campRoutes.js';
 import bloodBankRoutes from './routes/bloodBankRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import publicStatsRoutes from './routes/publicStatsRoutes.js';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/public/stats', publicStatsRoutes);
 app.use('/api/blood-requests', bloodRequestRoutes);
 app.use('/api/donors', donorRoutes);
 app.use('/api/camps', campRoutes);

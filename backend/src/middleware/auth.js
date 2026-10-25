@@ -34,6 +34,14 @@ export const adminOnly = (req, res, next) => {
   }
 };
 
+export const hospitalOrAdmin = (req, res, next) => {
+  if (req.user && ['hospital', 'admin'].includes(req.user.role)) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Access denied. Hospital or admin access required.' });
+  }
+};
+
 export const moderator = (req, res, next) => {
   if (req.user && ['admin', 'moderator'].includes(req.user.role)) {
     next();

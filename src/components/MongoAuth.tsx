@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMongoAuth } from '../contexts/useMongoAuth';
 import { Logo } from './Logo';
 import { MapPin, Mail, Lock, User, Phone, Droplet, AlertCircle } from 'lucide-react';
 import { useGeolocation } from '../hooks/useGeolocation';
+import { api } from '../lib/api';
+
+interface PublicStats {
+  registeredUsers: number;
+  activeDonors: number;
+  successfulDonations: number;
+  livesSaved: number;
+}
 
 export function MongoAuth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -19,9 +27,35 @@ export function MongoAuth() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<PublicStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState('');
+  const [statsAttempt, setStatsAttempt] = useState(0);
 
   const { signIn, signUp } = useMongoAuth();
-  const { coordinates, loading: geoLoading } = useGeolocation();
+  const {
+    coordinates,
+    error: geoError,
+    loading: geoLoading,
+    requestLocation,
+  } = useGeolocation();
+
+  useEffect(() => {
+    let active = true;
+    setStatsLoading(true);
+    setStatsError('');
+    api.publicStats.get()
+      .then((result: PublicStats) => {
+        if (active) setStats(result);
+      })
+      .catch(() => {
+        if (active) setStatsError('Statistics are temporarily unavailable.');
+      })
+      .finally(() => {
+        if (active) setStatsLoading(false);
+      });
+    return () => { active = false; };
+  }, [statsAttempt]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,8 +67,7 @@ export function MongoAuth() {
         await signIn(formData.email, formData.password);
       } else {
         if (!coordinates) {
-          setError('Location access required for registration');
-          setLoading(false);
+          setError('Get your location before creating an account.');
           return;
         }
 
@@ -69,17 +102,42 @@ export function MongoAuth() {
               <span className="text-rose-600">Give Blood</span>
             </h1>
             <p className="text-xl text-gray-600 leading-relaxed">
-              Join thousands of donors making a difference. Connect with those in need and be a hero today.
+              Join our donor community. Connect with people in need and make a difference.
             </p>
-            <div className="grid grid-cols-2 gap-4 pt-4">
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                <div className="text-3xl font-bold text-rose-600">50K+</div>
-                <div className="text-sm text-gray-600">Active Donors</div>
-              </div>
-              <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                <div className="text-3xl font-bold text-rose-600">10K+</div>
-                <div className="text-sm text-gray-600">Lives Saved</div>
-              </div>
+            <div aria-live="polite" className="pt-4">
+              {statsLoading && <p className="text-sm text-gray-600">Loading community statistics…</p>}
+              {statsError && (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-red-700" role="alert">
+                  <span>{statsError}</span>
+                  <button type="button" className="font-semibold underline" onClick={() => setStatsAttempt(attempt => attempt + 1)}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {stats && !statsLoading && !statsError && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <div className="text-3xl font-bold text-rose-600">{stats.registeredUsers.toLocaleString()}</div>
+                    <div className="text-sm text-gray-600">Registered users</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                    <div className="text-3xl font-bold text-rose-600">{stats.activeDonors.toLocaleString()}</div>
+                    <div className="text-sm text-gray-600">Active donors</div>
+                  </div>
+                  {stats.successfulDonations > 0 && (
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                      <div className="text-3xl font-bold text-rose-600">{stats.successfulDonations.toLocaleString()}</div>
+                      <div className="text-sm text-gray-600">Successful donations</div>
+                    </div>
+                  )}
+                  {stats.livesSaved > 0 && (
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                      <div className="text-3xl font-bold text-rose-600">{stats.livesSaved.toLocaleString()}</div>
+                      <div className="text-sm text-gray-600">Lives Saved</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -105,10 +163,10 @@ export function MongoAuth() {
             </div>
           )}
 
-          {!isLogin && geoLoading && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
-              <MapPin className="text-blue-600 flex-shrink-0 mt-0.5" size={20} />
-              <p className="text-sm text-blue-800">Requesting location access...</p>
+          {!isLogin && geoError && (
+            <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="text-amber-700 flex-shrink-0 mt-0.5" size={20} />
+              <p className="text-sm text-amber-900">{geoError}</p>
             </div>
           )}
 
@@ -228,6 +286,28 @@ export function MongoAuth() {
                       placeholder="NY"
                     />
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-3 flex items-start gap-2 text-sm text-gray-600">
+                    <MapPin className="mt-0.5 flex-shrink-0 text-rose-600" size={18} />
+                    <span>
+                      {coordinates
+                        ? 'Location captured. We use it to find nearby donors and requests.'
+                        : 'Share your location to find nearby donors and requests. Your browser will ask only after you click below.'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError('');
+                      requestLocation();
+                    }}
+                    disabled={geoLoading}
+                    className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {geoLoading ? 'Getting location…' : coordinates ? 'Refresh my location' : 'Get my location'}
+                  </button>
                 </div>
               </>
             )}

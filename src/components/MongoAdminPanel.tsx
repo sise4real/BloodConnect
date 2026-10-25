@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useMongoAuth } from '../contexts/useMongoAuth';
 import { api } from '../lib/api';
+import { MongoResourceManagement } from './MongoResourceManagement';
 import {
   LogOut,
   Check,
@@ -21,6 +22,7 @@ interface AdminItem {
   patientName?: string;
   bloodType?: string;
   status?: string;
+  livesSavedVerifiedAt?: string;
   urgency?: string;
   unitsNeeded?: number;
   reason?: string;
@@ -98,6 +100,21 @@ export function AdminPanel() {
     }
   };
 
+  const handleRecordLivesSaved = async (request: AdminItem) => {
+    if (!token) return;
+    const rawCount = prompt('How many lives were reliably documented as saved for this request?');
+    if (rawCount === null) return;
+    const evidence = prompt('Enter the supporting verification record or reference:');
+    if (evidence === null) return;
+    try {
+      await api.bloodRequests.verifyLivesSaved(request._id, { livesSavedCount: Number(rawCount), evidence }, token);
+      await loadDashboard();
+    } catch (error) {
+      console.error('Failed to record lives saved:', error);
+      alert(error instanceof Error ? error.message : 'Unable to record lives saved');
+    }
+  };
+
   const handleModerateCamp = async (id: string, status: string, notes: string = '') => {
     if (!token) return;
     try {
@@ -166,6 +183,7 @@ export function AdminPanel() {
               {[
                 { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
                 { id: 'pending', label: 'Pending Approvals', icon: AlertTriangle },
+                { id: 'resources', label: 'Manage Resources', icon: Building2 },
                 { id: 'users', label: 'Users', icon: Users }
               ].map(tab => (
                 <button
@@ -247,6 +265,14 @@ export function AdminPanel() {
                           }`}>
                             {req.status}
                           </span>
+                          {req.status === 'fulfilled' && !req.livesSavedVerifiedAt && (
+                            <button
+                              onClick={() => handleRecordLivesSaved(req)}
+                              className="ml-2 rounded bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-200"
+                            >
+                              Record verified lives saved
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -429,6 +455,8 @@ export function AdminPanel() {
                 )}
               </div>
             )}
+
+            {activeTab === 'resources' && <MongoResourceManagement />}
 
             {activeTab === 'users' && (
               <div>

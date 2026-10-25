@@ -4,6 +4,24 @@ export const searchDonors = async (req, res) => {
   try {
     const { bloodType, latitude, longitude, radius, availability } = req.query;
 
+    const validBloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    if (bloodType && !validBloodTypes.includes(bloodType)) {
+      return res.status(400).json({ message: 'Invalid blood type' });
+    }
+    if ((latitude === undefined) !== (longitude === undefined)) {
+      return res.status(400).json({ message: 'Latitude and longitude must be provided together' });
+    }
+    if (latitude !== undefined || longitude !== undefined) {
+      const lat = Number(latitude);
+      const lon = Number(longitude);
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+        return res.status(400).json({ message: 'Invalid latitude or longitude' });
+      }
+    }
+    if (availability !== undefined && !['true', 'false'].includes(availability)) {
+      return res.status(400).json({ message: 'Availability must be true or false' });
+    }
+
     let query = { role: 'donor', isActive: true };
 
     if (bloodType) {
@@ -15,13 +33,17 @@ export const searchDonors = async (req, res) => {
     }
 
     if (latitude && longitude) {
+      const searchRadius = radius === undefined ? 50 : Number(radius);
+      if (!Number.isFinite(searchRadius) || searchRadius <= 0) {
+        return res.status(400).json({ message: 'Radius must be a positive number of kilometres' });
+      }
       query.location = {
         $near: {
           $geometry: {
             type: 'Point',
             coordinates: [parseFloat(longitude), parseFloat(latitude)]
           },
-          $maxDistance: radius ? parseInt(radius) * 1000 : 50000
+          $maxDistance: searchRadius * 1000
         }
       };
     }

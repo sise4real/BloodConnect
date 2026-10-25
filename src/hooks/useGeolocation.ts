@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
+import { getGeolocationErrorMessage } from '../lib/pwa';
 
 interface Coordinates {
   latitude: number;
@@ -15,10 +16,10 @@ export function useGeolocation() {
   const [state, setState] = useState<GeolocationState>({
     coordinates: null,
     error: null,
-    loading: true,
+    loading: false,
   });
 
-  useEffect(() => {
+  const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setState({
         coordinates: null,
@@ -28,6 +29,7 @@ export function useGeolocation() {
       return;
     }
 
+    setState((current) => ({ ...current, error: null, loading: true }));
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setState({
@@ -42,12 +44,13 @@ export function useGeolocation() {
       (error) => {
         setState({
           coordinates: null,
-          error: error.message,
+          error: getGeolocationErrorMessage(error),
           loading: false,
         });
-      }
+      },
+      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   }, []);
 
-  return state;
+  return { ...state, requestLocation };
 }
