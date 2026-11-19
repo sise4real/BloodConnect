@@ -1,4 +1,5 @@
 import DonationCamp from '../models/DonationCamp.js';
+import { notifyNearbyDonorsOfCamp } from './notificationController.js';
 
 export const createCamp = async (req, res) => {
   try {
@@ -128,6 +129,7 @@ export const moderateCamp = async (req, res) => {
       return res.status(400).json({ message: 'Invalid camp status' });
     }
 
+    const previousStatus = camp.status;
     camp.status = status;
     camp.moderationNotes = moderationNotes;
     camp.moderatedBy = req.user._id;
@@ -135,6 +137,10 @@ export const moderateCamp = async (req, res) => {
 
     await camp.save();
     await camp.populate('moderatedBy', 'fullName');
+
+    if (['approved', 'active'].includes(status) && !['approved', 'active'].includes(previousStatus)) {
+      await notifyNearbyDonorsOfCamp(camp);
+    }
 
     res.json(camp);
   } catch (error) {

@@ -1,19 +1,25 @@
 import BloodRequest from '../models/BloodRequest.js';
 import User from '../models/User.js';
 import { notifyNearbyDonors } from './notificationController.js';
+import { getDonorEligibility } from '../utils/donorEligibility.js';
 
 export const createBloodRequest = async (req, res) => {
   try {
+    const { patientName, bloodType, unitsNeeded, urgency, hospital, location, reason, requiredBy } = req.body;
     const bloodRequest = await BloodRequest.create({
-      ...req.body,
-      requester: req.user._id
+      patientName,
+      bloodType,
+      unitsNeeded,
+      urgency,
+      hospital,
+      location,
+      reason,
+      requiredBy,
+      requester: req.user._id,
+      status: 'pending'
     });
 
     await bloodRequest.populate('requester', 'fullName email phone');
-
-    if (bloodRequest.status === 'approved') {
-      await notifyNearbyDonors(bloodRequest);
-    }
 
     res.status(201).json(bloodRequest);
   } catch (error) {
@@ -75,6 +81,19 @@ export const getBloodRequestById = async (req, res) => {
 export const respondToRequest = async (req, res) => {
   try {
     const { status, notes } = req.body;
+    if (req.user.role !== 'donor') {
+      return res.status(403).json({ message: 'Only donors can respond to blood requests' });
+    }
+    if (!['accepted', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Response status must be accepted or rejected' });
+    }
+    if (status === 'accepted') {
+      const donor = await User.findById(req.user._id);
+      const eligibility = getDonorEligibility(donor);
+      if (!eligibility.isEligible) {
+        return res.status(400).json({ message: 'You are not currently eligible to accept a donation request', reasons: eligibility.reasons });
+      }
+    }
     const bloodRequest = await BloodRequest.findById(req.params.id);
 
     if (!bloodRequest) {
@@ -90,6 +109,9 @@ export const respondToRequest = async (req, res) => {
     );
 
     if (existingResponse) {
+      if (existingResponse.verifiedAt || existingResponse.status === 'completed') {
+        return res.status(400).json({ message: 'A completed donation response cannot be changed' });
+      }
       existingResponse.status = status;
       existingResponse.notes = notes;
       existingResponse.respondedAt = Date.now();
@@ -113,6 +135,9 @@ export const respondToRequest = async (req, res) => {
 export const moderateBloodRequest = async (req, res) => {
   try {
     const { status, moderationNotes } = req.body;
+    if (!['approved', 'rejected', 'fulfilled', 'expired'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid request status' });
+    }
     const bloodRequest = await BloodRequest.findById(req.params.id);
 
     if (!bloodRequest) {
@@ -120,6 +145,17 @@ export const moderateBloodRequest = async (req, res) => {
     }
 
     const previousStatus = bloodRequest.status;
+    if (status === 'fulfilled') {
+      if (previousStatus !== 'approved') {
+        return res.status(400).json({ message: 'Only approved requests can be marked fulfilled' });
+      }
+      const hasVerifiedDonation = bloodRequest.responses.some(response =>
+        response.status === 'completed' && response.verifiedAt && response.verifiedBy
+      );
+      if (!hasVerifiedDonation) {
+        return res.status(400).json({ message: 'A completed donation must be verified before fulfilling this request' });
+      }
+    }
     bloodRequest.status = status;
     bloodRequest.moderationNotes = moderationNotes;
     bloodRequest.moderatedBy = req.user._id;
@@ -173,6 +209,7 @@ export const updateResponseStatus = async (req, res) => {
       if (donor) {
         donor.donationsCount += 1;
         donor.lastDonation = Date.now();
+        donor.eligibilityReminderSentAt = null;
         await donor.save();
       }
     }

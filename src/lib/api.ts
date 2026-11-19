@@ -105,11 +105,6 @@ export const api = {
     getById: (id: string, token: string) => request(`/donors/${id}`, { token }),
     getStats: (token: string) => request('/donors/stats', { token }),
     checkEligibility: (token: string) => request('/donors/eligibility', { token }),
-    updateDonationHistory: (data: unknown, token: string) => request('/donors/donation-history', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      token,
-    }),
   },
 
   camps: {

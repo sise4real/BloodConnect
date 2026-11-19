@@ -12,6 +12,7 @@ export interface MongoUser {
     address?: string;
     city?: string;
     state?: string;
+    postalCode?: string;
   };
   phone?: string;
   availability?: boolean;

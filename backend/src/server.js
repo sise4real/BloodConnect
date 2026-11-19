@@ -11,6 +11,7 @@ import bloodBankRoutes from './routes/bloodBankRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import publicStatsRoutes from './routes/publicStatsRoutes.js';
+import { startEligibilityReminderJob } from './jobs/eligibilityReminderJob.js';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 connectDatabase().then(() => {
+  startEligibilityReminderJob();
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV}`);

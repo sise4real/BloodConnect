@@ -15,7 +15,30 @@ export const getDashboardStats = async (req, res) => {
 
     const pendingRequests = await BloodRequest.countDocuments({ status: 'pending' });
     const approvedRequests = await BloodRequest.countDocuments({ status: 'approved' });
+    const fulfilledRequests = await BloodRequest.countDocuments({ status: 'fulfilled' });
     const totalRequests = await BloodRequest.countDocuments();
+    const verifiedDonations = await BloodRequest.aggregate([
+      { $unwind: '$responses' },
+      {
+        $match: {
+          'responses.status': 'completed',
+          'responses.verifiedAt': { $type: 'date' },
+          'responses.verifiedBy': { $type: 'objectId' }
+        }
+      },
+      { $count: 'count' }
+    ]);
+    const bloodTypeDemand = await BloodRequest.aggregate([
+      { $match: { status: { $in: ['pending', 'approved'] } } },
+      {
+        $group: {
+          _id: '$bloodType',
+          requests: { $sum: 1 },
+          unitsNeeded: { $sum: '$unitsNeeded' }
+        }
+      },
+      { $sort: { unitsNeeded: -1 } }
+    ]);
 
     const pendingCamps = await DonationCamp.countDocuments({ status: 'pending' });
     const activeCamps = await DonationCamp.countDocuments({
@@ -44,8 +67,11 @@ export const getDashboardStats = async (req, res) => {
       requests: {
         total: totalRequests,
         pending: pendingRequests,
-        approved: approvedRequests
+        approved: approvedRequests,
+        fulfilled: fulfilledRequests
       },
+      donations: { completed: verifiedDonations[0]?.count ?? 0 },
+      bloodTypeDemand,
       camps: {
         pending: pendingCamps,
         active: activeCamps
