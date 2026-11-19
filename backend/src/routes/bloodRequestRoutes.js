@@ -9,13 +9,13 @@ import {
   verifyLivesSaved,
   deleteBloodRequest
 } from '../controllers/bloodRequestController.js';
-import { protect, adminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, requesterRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
 router.route('/')
   .get(protect, getBloodRequests)
-  .post(protect, createBloodRequest);
+  .post(protect, requesterRole, createBloodRequest);
 
 router.route('/:id')
   .get(protect, getBloodRequestById)

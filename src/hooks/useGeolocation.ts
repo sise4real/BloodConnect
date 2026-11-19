@@ -19,7 +19,7 @@ export function useGeolocation() {
     loading: false,
   });
 
-  const requestLocation = useCallback(() => {
+  const requestLocation = useCallback((options?: PositionOptions) => {
     if (!navigator.geolocation) {
       setState({
         coordinates: null,
@@ -48,7 +48,7 @@ export function useGeolocation() {
           loading: false,
         });
       },
-      { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+      options ?? { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
     );
   }, []);
 

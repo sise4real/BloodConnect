@@ -23,7 +23,8 @@ export function MongoAuth() {
     bloodType: 'A+',
     address: '',
     city: '',
-    state: ''
+    state: '',
+    postalCode: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -78,7 +79,8 @@ export function MongoAuth() {
             coordinates: [coordinates.longitude, coordinates.latitude] as [number, number],
             address: formData.address,
             city: formData.city,
-            state: formData.state
+            state: formData.state,
+            postalCode: formData.postalCode
           }
         };
 
@@ -242,6 +244,20 @@ export function MongoAuth() {
                       placeholder="+1 (555) 123-4567"
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Postal code / Pincode
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.postalCode}
+                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition"
+                    placeholder="Postal code or pincode"
+                    autoComplete="postal-code"
+                  />
                 </div>
 
                 <div>

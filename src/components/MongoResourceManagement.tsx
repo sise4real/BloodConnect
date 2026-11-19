@@ -9,6 +9,7 @@ interface BankRecord {
   status: string;
   location?: { coordinates?: number[]; address?: string; city?: string };
   contact?: { phone?: string; email?: string; website?: string };
+  inventory?: { bloodType: string; units: number; lastUpdated?: string }[];
   hours?: string;
 }
 
@@ -26,6 +27,8 @@ interface CampRecord {
 }
 
 const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-200';
+const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const blankInventory = () => Object.fromEntries(bloodTypes.map(type => [type, ''])) as Record<string, string>;
 const initialBank = { name: '', address: '', city: '', longitude: '', latitude: '', phone: '', email: '', website: '', hours: '24/7' };
 const initialCamp = { name: '', description: '', address: '', venue: '', longitude: '', latitude: '', date: '', startTime: '', endTime: '', phone: '', email: '', capacity: '' };
 
@@ -40,6 +43,7 @@ export function MongoResourceManagement() {
   const [formType, setFormType] = useState<'bank' | 'camp' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [bankForm, setBankForm] = useState(initialBank);
+  const [inventoryForm, setInventoryForm] = useState<Record<string, string>>(blankInventory);
   const [campForm, setCampForm] = useState(initialCamp);
 
   const loadResources = useCallback(async () => {
@@ -73,6 +77,7 @@ export function MongoResourceManagement() {
     setEditingId(null);
     const coords = locationDefaults();
     setBankForm({ ...initialBank, ...coords, address: user?.location?.address ?? '', city: user?.location?.city ?? '' });
+    setInventoryForm(blankInventory());
     setCampForm({ ...initialCamp, ...coords, address: user?.location?.address ?? '' });
     setFormType(type);
   };
@@ -85,6 +90,10 @@ export function MongoResourceManagement() {
       name: bank.name ?? '', address: bank.location?.address ?? '', city: bank.location?.city ?? '',
       longitude: bank.location?.coordinates?.[0]?.toString() ?? '', latitude: bank.location?.coordinates?.[1]?.toString() ?? '',
       phone: bank.contact?.phone ?? '', email: bank.contact?.email ?? '', website: bank.contact?.website ?? '', hours: bank.hours ?? ''
+    });
+    setInventoryForm({
+      ...blankInventory(),
+      ...Object.fromEntries((bank.inventory ?? []).map(item => [item.bloodType, String(item.units)]))
     });
     setFormType('bank');
   };
@@ -127,11 +136,22 @@ export function MongoResourceManagement() {
       setError('Enter valid longitude and latitude coordinates.');
       return;
     }
+    const invalidUnits = Object.values(inventoryForm).some(value => value !== '' && (!Number.isInteger(Number(value)) || Number(value) < 0));
+    if (invalidUnits) {
+      setError('Blood stock must be a non-negative whole number of units.');
+      return;
+    }
+    const inventory = bloodTypes.flatMap(bloodType => inventoryForm[bloodType] === '' ? [] : [{
+      bloodType,
+      units: Number(inventoryForm[bloodType]),
+      lastUpdated: new Date().toISOString()
+    }]);
     const data = {
       name: bankForm.name.trim(),
       location: { type: 'Point', coordinates: [longitude, latitude], address: bankForm.address.trim(), city: bankForm.city.trim() },
       contact: { phone: bankForm.phone.trim(), email: bankForm.email.trim(), website: bankForm.website.trim() },
-      hours: bankForm.hours.trim()
+      hours: bankForm.hours.trim(),
+      inventory
     };
     setBusy(true);
     setError('');
@@ -224,6 +244,26 @@ export function MongoResourceManagement() {
                 <input className={inputClass} placeholder="Website" value={bankForm.website} onChange={e => setBankForm({ ...bankForm, website: e.target.value })} />
                 <input className={inputClass} placeholder="Opening hours" value={bankForm.hours} onChange={e => setBankForm({ ...bankForm, hours: e.target.value })} />
               </div>
+              <fieldset className="rounded-lg border border-gray-200 bg-white p-4">
+                <legend className="px-2 text-sm font-semibold text-gray-800">Current blood stock (units)</legend>
+                <p className="mb-3 text-xs text-gray-500">Saving stock records the current update time for each reported blood group.</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {bloodTypes.map(type => (
+                    <label key={type} className="text-sm font-medium text-gray-700">
+                      {type}
+                      <input
+                        className={`${inputClass} mt-1`}
+                        type="number"
+                        min="0"
+                        step="1"
+                        placeholder="Not reported"
+                        value={inventoryForm[type]}
+                        onChange={e => setInventoryForm({ ...inventoryForm, [type]: e.target.value })}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </>
           ) : (
             <>
@@ -257,7 +297,7 @@ export function MongoResourceManagement() {
             <h3 className="flex items-center gap-2 font-bold text-gray-900"><Building2 size={19} /> Blood banks ({banks.length})</h3>
             {banks.length === 0 ? <p className="rounded-lg bg-gray-50 p-4 text-sm text-gray-600">No managed blood banks yet.</p> : banks.map(bank => (
               <div key={bank._id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4">
-                <div><div className="font-semibold text-gray-900">{bank.name}</div><div className="text-sm text-gray-600">{bank.location?.address}{bank.location?.city ? `, ${bank.location.city}` : ''}</div><span className="mt-2 inline-block rounded bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">{bank.status}</span></div>
+                <div><div className="font-semibold text-gray-900">{bank.name}</div><div className="text-sm text-gray-600">{bank.location?.address}{bank.location?.city ? `, ${bank.location.city}` : ''}</div><span className="mt-2 inline-block rounded bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">{bank.status}</span>{bank.inventory?.length ? <div className="mt-2 text-xs text-gray-600">{bank.inventory.map(item => `${item.bloodType}: ${item.units}`).join(' · ')}</div> : null}</div>
                 <div className="flex gap-1"><button type="button" aria-label={`Edit ${bank.name}`} onClick={() => startEditBank(bank)} className="rounded p-2 text-gray-600 hover:bg-gray-100"><Pencil size={17} /></button><button type="button" disabled={busy} aria-label={`Delete ${bank.name}`} onClick={() => void removeResource('bank', bank._id)} className="rounded p-2 text-red-600 hover:bg-red-50"><Trash2 size={17} /></button></div>
               </div>
             ))}

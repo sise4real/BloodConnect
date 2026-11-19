@@ -45,13 +45,18 @@ const userSchema = new mongoose.Schema({
     },
     address: String,
     city: String,
-    state: String
+    state: String,
+    postalCode: String
   },
   availability: {
     type: Boolean,
     default: true
   },
   lastDonation: {
+    type: Date,
+    default: null
+  },
+  eligibilityReminderSentAt: {
     type: Date,
     default: null
   },

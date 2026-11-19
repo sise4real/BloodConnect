@@ -15,7 +15,7 @@ import {
   Shield
 } from 'lucide-react';
 
-interface AdminUser { _id: string; fullName: string; email: string; role: string; bloodType?: string; isActive: boolean }
+interface AdminUser { _id: string; fullName: string; email: string; role: string; bloodType?: string; isActive: boolean; isVerified?: boolean }
 interface AdminItem {
   _id: string;
   name?: string;
@@ -37,10 +37,13 @@ interface AdminItem {
   location?: { address?: string; city?: string; venue?: string };
   contact?: { phone?: string };
   hours?: string;
+  responses?: Array<{ status?: string; verifiedAt?: string; verifiedBy?: string }>;
 }
 interface DashboardStats {
   users: { total: number; activeDonors: number };
-  requests: { total: number; pending: number };
+  requests: { total: number; pending: number; approved: number; fulfilled: number };
+  donations: { completed: number };
+  bloodTypeDemand: Array<{ _id: string; requests: number; unitsNeeded: number }>;
   camps: { active: number; pending: number };
   bloodBanks: { approved: number; pending: number };
   recent: { requests: AdminItem[]; users: AdminUser[] };
@@ -53,6 +56,7 @@ export function AdminPanel() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pending, setPending] = useState<PendingItems>({ requests: [], camps: [], bloodBanks: [] });
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [approvedRequests, setApprovedRequests] = useState<AdminItem[]>([]);
 
   const loadDashboard = useCallback(async () => {
     if (!token) return;
@@ -81,6 +85,16 @@ export function AdminPanel() {
       setUsers(data.users);
     } catch (error) {
       console.error('Failed to load users:', error);
+    }
+  };
+
+  const loadApprovedRequests = async () => {
+    if (!token) return;
+    try {
+      const data = await api.bloodRequests.getAll({ status: 'approved' }, token);
+      setApprovedRequests(data);
+    } catch (error) {
+      console.error('Failed to load approved requests:', error);
     }
   };
 
@@ -147,6 +161,16 @@ export function AdminPanel() {
     }
   };
 
+  const handleUpdateHospitalVerification = async (hospitalId: string, isVerified: boolean) => {
+    if (!token) return;
+    try {
+      await api.admin.updateUser(hospitalId, { isVerified }, token);
+      await loadUsers();
+    } catch (error) {
+      console.error('Failed to update hospital verification:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-gradient-to-r from-rose-600 to-red-600 text-white shadow-lg sticky top-0 z-50">
@@ -183,6 +207,7 @@ export function AdminPanel() {
               {[
                 { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
                 { id: 'pending', label: 'Pending Approvals', icon: AlertTriangle },
+                { id: 'approved-requests', label: 'Approved Requests', icon: Droplet },
                 { id: 'resources', label: 'Manage Resources', icon: Building2 },
                 { id: 'users', label: 'Users', icon: Users }
               ].map(tab => (
@@ -191,6 +216,7 @@ export function AdminPanel() {
                   onClick={() => {
                     setActiveTab(tab.id);
                     if (tab.id === 'users') loadUsers();
+                    if (tab.id === 'approved-requests') loadApprovedRequests();
                   }}
                   className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
                     activeTab === tab.id
@@ -215,7 +241,7 @@ export function AdminPanel() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">System Overview</h2>
 
-                <div className="grid md:grid-cols-4 gap-6 mb-8">
+                <div className="grid md:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
                   <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-6 border border-blue-200">
                     <Users className="text-blue-600 mb-3" size={32} />
                     <div className="text-3xl font-bold text-blue-900 mb-1">{stats.users.total}</div>
@@ -228,6 +254,13 @@ export function AdminPanel() {
                     <div className="text-3xl font-bold text-red-900 mb-1">{stats.requests.total}</div>
                     <div className="text-sm text-red-700">Blood Requests</div>
                     <div className="text-xs text-red-600 mt-2">{stats.requests.pending} pending</div>
+                    <div className="text-xs text-red-600">{stats.requests.approved} approved · {stats.requests.fulfilled} fulfilled</div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-6 border border-rose-200">
+                    <Check className="text-rose-600 mb-3" size={32} />
+                    <div className="text-3xl font-bold text-rose-900 mb-1">{stats.donations.completed}</div>
+                    <div className="text-sm text-rose-700">Verified Donations</div>
                   </div>
 
                   <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-6 border border-orange-200">
@@ -244,6 +277,18 @@ export function AdminPanel() {
                     <div className="text-xs text-green-600 mt-2">{stats.bloodBanks.pending} pending</div>
                   </div>
                 </div>
+
+                <section className="bg-white rounded-xl p-6 border border-gray-200 mb-8">
+                  <h3 className="font-bold text-gray-900 mb-4">Blood group demand (open requests)</h3>
+                  {stats.bloodTypeDemand.length === 0 ? <p className="text-sm text-gray-600">No open blood requests.</p> : (
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      {stats.bloodTypeDemand.map(item => <div key={item._id} className="rounded-lg bg-gray-50 p-4">
+                        <div className="font-bold text-rose-700">{item._id}</div>
+                        <div className="text-sm text-gray-700">{item.requests} requests · {item.unitsNeeded} units</div>
+                      </div>)}
+                    </div>
+                  )}
+                </section>
 
                 <div className="grid md:grid-cols-2 gap-6">
                   <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
@@ -458,6 +503,33 @@ export function AdminPanel() {
 
             {activeTab === 'resources' && <MongoResourceManagement />}
 
+            {activeTab === 'approved-requests' && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Approved Blood Requests</h2>
+                <p className="text-sm text-gray-600 mb-6">Requests can be fulfilled only after a completed donation has been recorded and verified.</p>
+                {approvedRequests.length === 0 ? <p className="text-gray-600">No approved requests.</p> : (
+                  <div className="space-y-4">
+                    {approvedRequests.map(req => {
+                      const verified = req.responses?.some(response => response.status === 'completed' && response.verifiedAt && response.verifiedBy);
+                      return <article key={req._id} className="rounded-lg border border-gray-200 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{req.patientName} · {req.bloodType}</h3>
+                          <p className="text-sm text-gray-600">{req.unitsNeeded} units · {req.hospital?.name || 'Hospital not specified'}</p>
+                          <p className="text-sm mt-1">{verified ? 'Verified completed donation recorded' : 'No verified completed donation recorded yet'}</p>
+                        </div>
+                        <button disabled={!verified} onClick={async () => {
+                          try {
+                            await api.bloodRequests.moderate(req._id, { status: 'fulfilled' }, token!);
+                            await Promise.all([loadApprovedRequests(), loadDashboard()]);
+                          } catch (error) { alert(error instanceof Error ? error.message : 'Unable to fulfill request'); }
+                        }} className="rounded-lg bg-green-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300">Mark fulfilled</button>
+                      </article>;
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'users' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">User Management</h2>
@@ -469,12 +541,18 @@ export function AdminPanel() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blood Type</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Verification</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {users.map((u) => (
                         <tr key={u._id}>
+                          <td className="px-6 py-4">
+                            {u.role === 'hospital' ? <button onClick={() => handleUpdateHospitalVerification(u._id, !u.isVerified)} className={`px-3 py-1 text-sm rounded font-medium ${u.isVerified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                              {u.isVerified ? 'Verified · Revoke' : 'Verify hospital'}
+                            </button> : <span className="text-sm text-gray-400">—</span>}
+                          </td>
                           <td className="px-6 py-4">
                             <div className="font-medium text-gray-900">{u.fullName}</div>
                             <div className="text-sm text-gray-600">{u.email}</div>

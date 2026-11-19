@@ -1,8 +1,13 @@
 import User from '../models/User.js';
+import { getDonorEligibility } from '../utils/donorEligibility.js';
 
 export const searchDonors = async (req, res) => {
   try {
-    const { bloodType, latitude, longitude, radius, availability } = req.query;
+    const { bloodType, latitude, longitude, radius } = req.query;
+    const city = typeof req.query.city === 'string' ? req.query.city.trim() : '';
+    const postalCode = typeof req.query.postalCode === 'string' ? req.query.postalCode.trim() : '';
+    const hasCoordinates = latitude !== undefined && longitude !== undefined;
+    const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const validBloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
     if (bloodType && !validBloodTypes.includes(bloodType)) {
@@ -18,34 +23,57 @@ export const searchDonors = async (req, res) => {
         return res.status(400).json({ message: 'Invalid latitude or longitude' });
       }
     }
-    if (availability !== undefined && !['true', 'false'].includes(availability)) {
-      return res.status(400).json({ message: 'Availability must be true or false' });
+    if (!hasCoordinates && !city && !postalCode) {
+      return res.status(400).json({ message: 'Search by city, postal code, or current GPS location' });
     }
 
-    let query = { role: 'donor', isActive: true };
+    const query = { role: 'donor', isActive: true, availability: true };
+    const locationConditions = [];
 
     if (bloodType) {
       query.bloodType = bloodType;
     }
 
-    if (availability !== undefined) {
-      query.availability = availability === 'true';
+    if (city) {
+      locationConditions.push({ 'location.city': new RegExp(`^${escapeRegex(city)}$`, 'i') });
     }
 
-    if (latitude && longitude) {
+    if (postalCode) {
+      locationConditions.push({ 'location.postalCode': new RegExp(`^${escapeRegex(postalCode)}$`, 'i') });
+    }
+
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    locationConditions.push({
+      $or: [{ lastDonation: null }, { lastDonation: { $lte: threeMonthsAgo } }]
+    });
+    locationConditions.push({
+      $or: [{ 'medicalInfo.age': null }, { 'medicalInfo.age': { $gte: 18, $lte: 65 } }]
+    });
+    locationConditions.push({
+      $or: [{ 'medicalInfo.weight': null }, { 'medicalInfo.weight': { $gte: 50 } }]
+    });
+
+    if (hasCoordinates) {
       const searchRadius = radius === undefined ? 50 : Number(radius);
       if (!Number.isFinite(searchRadius) || searchRadius <= 0) {
         return res.status(400).json({ message: 'Radius must be a positive number of kilometres' });
       }
-      query.location = {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
-          },
-          $maxDistance: searchRadius * 1000
+      locationConditions.push({
+        location: {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [Number(longitude), Number(latitude)]
+            },
+            $maxDistance: searchRadius * 1000
+          }
         }
-      };
+      });
+    }
+
+    if (locationConditions.length > 0) {
+      query.$and = locationConditions;
     }
 
     const donors = await User.find(query)
@@ -114,68 +142,15 @@ export const checkEligibility = async (req, res) => {
       return res.status(400).json({ message: 'Only donors can check eligibility' });
     }
 
-    const eligibility = {
-      isEligible: true,
-      reasons: []
-    };
-
-    if (!donor.lastDonation) {
-      return res.json({ ...eligibility, message: 'You are eligible to donate!' });
-    }
-
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-
-    if (donor.lastDonation > threeMonthsAgo) {
-      eligibility.isEligible = false;
-      const nextEligibleDate = new Date(donor.lastDonation);
-      nextEligibleDate.setMonth(nextEligibleDate.getMonth() + 3);
-      eligibility.reasons.push(`You must wait 3 months after your last donation. You'll be eligible again on ${nextEligibleDate.toLocaleDateString()}`);
-      eligibility.nextEligibleDate = nextEligibleDate;
-    }
-
-    if (donor.medicalInfo?.age && donor.medicalInfo.age < 18) {
-      eligibility.isEligible = false;
-      eligibility.reasons.push('You must be at least 18 years old to donate');
-    }
-
-    if (donor.medicalInfo?.age && donor.medicalInfo.age > 65) {
-      eligibility.isEligible = false;
-      eligibility.reasons.push('Donors must be under 65 years old');
-    }
-
-    if (donor.medicalInfo?.weight && donor.medicalInfo.weight < 50) {
-      eligibility.isEligible = false;
-      eligibility.reasons.push('You must weigh at least 50kg to donate');
-    }
+    const eligibility = getDonorEligibility(donor);
 
     res.json({
       ...eligibility,
-      message: eligibility.isEligible ? 'You are eligible to donate!' : 'You are currently not eligible to donate'
+      message: eligibility.isEligible ? 'You are eligible to donate!' : 'You are currently not eligible to donate',
+      ...(eligibility.nextEligibleDate ? { nextEligibleDate: eligibility.nextEligibleDate } : {})
     });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
 };
 
-export const updateDonationHistory = async (req, res) => {
-  try {
-    const donor = await User.findById(req.user._id);
-
-    if (donor.role !== 'donor') {
-      return res.status(400).json({ message: 'Only donors can update donation history' });
-    }
-
-    donor.lastDonation = req.body.donationDate || Date.now();
-    donor.donationsCount += 1;
-    await donor.save();
-
-    res.json({
-      message: 'Donation history updated',
-      lastDonation: donor.lastDonation,
-      donationsCount: donor.donationsCount
-    });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};

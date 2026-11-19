@@ -122,7 +122,7 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
         </div>
       </div>
 
-      {request.status === 'approved' && !isRequester && (
+      {request.status === 'approved' && user?.role === 'donor' && !isRequester && (
         <div className="border-t pt-4 mt-4">
           {!hasResponded && !responding && (
             <button
@@ -150,6 +150,14 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
                 >
                   <Check size={18} className="inline mr-2" />
                   Accept
+                </button>
+                <button
+                  onClick={() => handleRespond('rejected')}
+                  disabled={loading}
+                  className="flex-1 bg-red-600 text-white py-2 rounded-lg font-semibold hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  <X size={18} className="inline mr-2" />
+                  Reject
                 </button>
                 <button
                   onClick={() => setResponding(false)}

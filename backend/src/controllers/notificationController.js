@@ -1,5 +1,6 @@
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
+import { getDonorEligibility } from '../utils/donorEligibility.js';
 
 export const createNotification = async (userId, type, title, message, data = {}) => {
   try {
@@ -18,11 +19,18 @@ export const createNotification = async (userId, type, title, message, data = {}
 
 export const notifyNearbyDonors = async (bloodRequest) => {
   try {
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
     const donors = await User.find({
       role: 'donor',
       bloodType: bloodRequest.bloodType,
       isActive: true,
       availability: true,
+      $and: [
+        { $or: [{ lastDonation: null }, { lastDonation: { $lte: threeMonthsAgo } }] },
+        { $or: [{ 'medicalInfo.age': null }, { 'medicalInfo.age': { $gte: 18, $lte: 65 } }] },
+        { $or: [{ 'medicalInfo.weight': null }, { 'medicalInfo.weight': { $gte: 50 } }] }
+      ],
       location: {
         $near: {
           $geometry: {
@@ -45,6 +53,39 @@ export const notifyNearbyDonors = async (bloodRequest) => {
     await Notification.insertMany(notifications);
   } catch (error) {
     console.error('Error notifying donors:', error);
+  }
+};
+
+export const notifyNearbyDonorsOfCamp = async (camp) => {
+  try {
+    const donors = await User.find({
+      role: 'donor',
+      isActive: true,
+      availability: true,
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: camp.location.coordinates
+          },
+          $maxDistance: 50000
+        }
+      }
+    });
+
+    const notifications = donors
+      .filter(donor => getDonorEligibility(donor).isEligible)
+      .map(donor => ({
+        user: donor._id,
+        type: 'donation_camp',
+        title: 'Donation camp near you',
+        message: `${camp.name} is scheduled for ${new Date(camp.date).toLocaleDateString()}${camp.location.venue ? ` at ${camp.location.venue}` : ''}.`,
+        data: { campId: camp._id }
+      }));
+
+    if (notifications.length > 0) await Notification.insertMany(notifications);
+  } catch (error) {
+    console.error('Error notifying donors about camp:', error);
   }
 };
 

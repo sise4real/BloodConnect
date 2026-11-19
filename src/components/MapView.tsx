@@ -8,6 +8,7 @@ interface MapMarker {
   type: 'donor' | 'request' | 'camp' | 'bloodbank';
   title: string;
   info?: string;
+  directionsUrl?: string;
   onClick?: () => void;
 }
 
@@ -110,6 +111,7 @@ export function MapView({
           <div class="text-sm">
             <strong class="block text-base mb-1">${marker.title}</strong>
             ${marker.info ? `<p class="text-gray-600">${marker.info}</p>` : ''}
+            ${marker.directionsUrl ? `<a class="mt-2 inline-block text-blue-700 underline" href="${marker.directionsUrl}" target="_blank" rel="noreferrer">Get directions</a>` : ''}
           </div>
         `);
       }
