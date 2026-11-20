@@ -41,6 +41,9 @@ export const api = {
   publicStats: {
     get: () => request('/public/stats'),
   },
+  publicSettings: {
+    get: () => request('/settings/public'),
+  },
 
   auth: {
     register: (data: unknown) => request('/auth/register', {
@@ -57,6 +60,55 @@ export const api = {
       body: JSON.stringify(data),
       token,
     }),
+  },
+
+  institutionDocuments: {
+    upload: async (file: File, token: string) => {
+      const response = await fetch(`${API_URL}/institution-documents`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': file.type,
+          'X-File-Name': encodeURIComponent(file.name)
+        },
+        body: file
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Document upload failed');
+      return data;
+    },
+    getAll: (token: string) => request('/institution-documents', { token }),
+    download: async (id: string, token: string) => {
+      const response = await fetch(`${API_URL}/institution-documents/${id}/download`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Unable to download document');
+      }
+      return response.blob();
+    }
+  },
+
+  settings: {
+    get: (token: string) => request('/settings', { token }),
+    update: (data: unknown, token: string) => request('/settings', {
+      method: 'PUT', body: JSON.stringify(data), token
+    })
+  },
+
+  reports: {
+    download: async (report: string, params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
+      const response = await fetch(`${API_URL}/reports/${report}?${query}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Report generation failed');
+      }
+      return response.blob();
+    }
   },
 
   bloodRequests: {
@@ -79,6 +131,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
       token,
+    }),
+    renew: (id: string, data: unknown, token: string) => request(`/blood-requests/${id}/renew`, {
+      method: 'PUT', body: JSON.stringify(data), token
     }),
     updateResponseStatus: (id: string, data: unknown, token: string) =>
       request(`/blood-requests/${id}/response-status`, {
@@ -105,6 +160,10 @@ export const api = {
     getById: (id: string, token: string) => request(`/donors/${id}`, { token }),
     getStats: (token: string) => request('/donors/stats', { token }),
     checkEligibility: (token: string) => request('/donors/eligibility', { token }),
+    getHistory: (params: QueryParams, token: string) => {
+      const query = encodeQuery(params);
+      return request(`/donors/history?${query}`, { token });
+    },
   },
 
   camps: {
@@ -182,6 +241,10 @@ export const api = {
     deleteUser: (id: string, token: string) => request(`/admin/users/${id}`, {
       method: 'DELETE',
       token,
+    }),
+    getSettings: (token: string) => request('/settings', { token }),
+    updateSettings: (data: unknown, token: string) => request('/settings', {
+      method: 'PUT', body: JSON.stringify(data), token
     }),
   },
 

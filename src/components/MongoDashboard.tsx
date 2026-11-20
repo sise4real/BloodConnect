@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useMongoAuth } from '../contexts/useMongoAuth';
 import { Logo } from './Logo';
 import { MapView } from './MapView';
 import { BloodRequestCard } from './BloodRequestCard';
 import { AdminPanel } from './MongoAdminPanel';
 import { MongoResourceManagement } from './MongoResourceManagement';
+import { MongoReports } from './MongoReports';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { api } from '../lib/api';
 import {
@@ -18,7 +19,8 @@ import {
   X,
   Bell,
   CheckCircle,
-  Clock
+  Clock,
+  FileText
 } from 'lucide-react';
 
 interface GeoLocation {
@@ -38,12 +40,14 @@ interface MongoBloodRequest {
   reason: string;
   status: string;
   requiredBy: string;
+  expiresAt?: string;
+  renewalCount?: number;
   requester: { _id: string; fullName: string; phone: string };
   location: GeoLocation;
   hospital: { name: string; phone: string; address: string };
 }
 interface MongoCamp { _id: string; name: string; date: string; description?: string; location: GeoLocation }
-interface MongoBank { _id: string; name: string; location: GeoLocation; contact?: { phone?: string }; hours?: string; inventory?: { bloodType: string; units: number; lastUpdated?: string }[] }
+interface MongoBank { _id: string; name: string; location: GeoLocation; contact?: { phone?: string }; hours?: string; inventory?: { bloodType: string; units: number; lastUpdated?: string; lastVerifiedAt?: string; freshness?: 'fresh' | 'aging' | 'stale' | 'unverified'; confirmed?: boolean }[] }
 interface MongoDonor {
   _id: string;
   fullName: string;
@@ -54,15 +58,18 @@ interface MongoDonor {
   location?: GeoLocation;
 }
 interface MongoNotification { _id: string; title: string; message: string; isRead: boolean; createdAt: string }
-interface Eligibility { isEligible: boolean; message: string; reasons?: string[] }
+interface MongoDonationRecord { requestId: string; patientName: string; bloodType: string; hospital?: string; completedAt?: string; requestStatus: string }
+interface Eligibility { isEligible: boolean; passesPreliminaryChecks?: boolean; message: string; reasons?: string[]; assessmentStatus?: string; requiresMedicalScreening?: boolean }
 
 const googleMapsDirections = (latitude: number, longitude: number) =>
   `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
 
 export function MongoDashboard() {
-  const { user, token, signOut } = useMongoAuth();
+  const { user, token, signOut, updateUser } = useMongoAuth();
   const [activeTab, setActiveTab] = useState('requests');
   const [bloodRequests, setBloodRequests] = useState<MongoBloodRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<MongoBloodRequest[]>([]);
+  const [donationHistory, setDonationHistory] = useState<MongoDonationRecord[]>([]);
   const [donors, setDonors] = useState<MongoDonor[]>([]);
   const [donorBloodType, setDonorBloodType] = useState('');
   const [donorCity, setDonorCity] = useState('');
@@ -73,11 +80,20 @@ export function MongoDashboard() {
   const [donorSearchComplete, setDonorSearchComplete] = useState(false);
   const [camps, setCamps] = useState<MongoCamp[]>([]);
   const [bloodBanks, setBloodBanks] = useState<MongoBank[]>([]);
+  const [bloodBankSearchResults, setBloodBankSearchResults] = useState<MongoBank[] | null>(null);
+  const [bloodBankSearchType, setBloodBankSearchType] = useState('');
+  const [bloodBankSearchLoading, setBloodBankSearchLoading] = useState(false);
+  const [bloodBankSearchError, setBloodBankSearchError] = useState('');
+  const [stockRefreshSeconds, setStockRefreshSeconds] = useState(30);
   const [notifications, setNotifications] = useState<MongoNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const [showRequestForm, setShowRequestForm] = useState(false);
+  const [assessmentAge, setAssessmentAge] = useState(user?.medicalInfo?.age?.toString() || '');
+  const [assessmentWeight, setAssessmentWeight] = useState(user?.medicalInfo?.weight?.toString() || '');
+  const [assessmentSaving, setAssessmentSaving] = useState(false);
+  const [assessmentError, setAssessmentError] = useState('');
   const {
     coordinates: gpsCoordinates,
     error: gpsError,
@@ -94,21 +110,38 @@ export function MongoDashboard() {
     requiredBy: ''
   });
 
+  const [savedLongitude, savedLatitude] = user?.location?.coordinates || [undefined, undefined];
+  const nearbyResourceQuery = useMemo(() => Number.isFinite(savedLatitude) && Number.isFinite(savedLongitude)
+    ? { latitude: savedLatitude, longitude: savedLongitude, radius: 100 }
+    : {}, [savedLatitude, savedLongitude]);
+  const mapCenter = useMemo<[number, number]>(() =>
+    Number.isFinite(savedLatitude) && Number.isFinite(savedLongitude)
+      ? [Number(savedLatitude), Number(savedLongitude)]
+      : [20.5937, 78.9629],
+    [savedLatitude, savedLongitude]
+  );
+
   const loadData = useCallback(async () => {
     if (!token) return;
     try {
-      const [requestsData, campsData, banksData, notificationsData, unreadData] = await Promise.all([
+      const [requestsData, campsData, banksData, notificationsData, unreadData, ownRequests, historyData] = await Promise.all([
         api.bloodRequests.getAll({ status: 'approved' }, token),
-        api.camps.getAll({}, token),
-        api.bloodBanks.getAll({ status: 'approved' }, token),
+        api.camps.getAll(nearbyResourceQuery, token),
+        api.bloodBanks.getAll({ ...nearbyResourceQuery, status: 'approved' }, token),
         api.notifications.getAll({}, token),
-        api.notifications.getUnreadCount(token)
+        api.notifications.getUnreadCount(token),
+        user?.role === 'recipient' || user?.role === 'hospital'
+          ? api.bloodRequests.getAll({ mine: true }, token)
+          : Promise.resolve([]),
+        user?.role === 'donor' ? api.donors.getHistory({ limit: 100 }, token) : Promise.resolve({ donations: [] })
       ]);
       setBloodRequests(requestsData);
       setCamps(campsData);
       setBloodBanks(banksData);
       setNotifications(notificationsData);
       setUnreadCount(unreadData.count);
+      setMyRequests(ownRequests);
+      setDonationHistory(historyData.donations);
 
       if (user?.role === 'donor') {
         const eligibilityData = await api.donors.checkEligibility(token);
@@ -117,7 +150,30 @@ export function MongoDashboard() {
     } catch (error) {
       console.error('Failed to load data:', error);
     }
-  }, [token, user?.role]);
+  }, [token, user?.role, nearbyResourceQuery]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let cancelled = false;
+    api.publicSettings.get()
+      .then((settings: { stockDashboardRefreshSeconds?: number }) => {
+        if (cancelled) return;
+        const seconds = Number(settings.stockDashboardRefreshSeconds);
+        if (!Number.isFinite(seconds) || seconds < 10) return;
+        setStockRefreshSeconds(seconds);
+        timer = window.setInterval(async () => {
+          if (!token) return;
+          try {
+            const banks = await api.bloodBanks.getAll({ ...nearbyResourceQuery, status: 'approved' }, token);
+            setBloodBanks(banks);
+          } catch (error) {
+            console.error('Failed to refresh reported stock:', error);
+          }
+        }, seconds * 1000);
+      })
+      .catch(error => console.error('Failed to load stock refresh settings:', error));
+    return () => { cancelled = true; if (timer !== undefined) window.clearInterval(timer); };
+  }, [token, savedLatitude, savedLongitude, nearbyResourceQuery]);
 
   const searchDonors = async (bloodType?: string) => {
     if (!token) return;
@@ -149,6 +205,21 @@ export function MongoDashboard() {
       setDonorSearchComplete(true);
       setDonorSearchLoading(false);
     }
+  };
+
+  const searchBloodBankStock = async (bloodType: string) => {
+    setBloodBankSearchType(bloodType);
+    setBloodBankSearchError('');
+    if (!bloodType) { setBloodBankSearchResults(null); return; }
+    if (!token) return;
+    setBloodBankSearchResults([]);
+    setBloodBankSearchLoading(true);
+    try {
+      const data = await api.bloodBanks.getAll({ ...nearbyResourceQuery, status: 'approved', bloodType }, token);
+      setBloodBankSearchResults(data);
+    } catch (error) {
+      setBloodBankSearchError(error instanceof Error ? error.message : 'Unable to search confirmed blood stock.');
+    } finally { setBloodBankSearchLoading(false); }
   };
 
   useEffect(() => {
@@ -183,6 +254,26 @@ export function MongoDashboard() {
       loadData();
     } catch (error) {
       console.error('Failed to create request:', error);
+    }
+  };
+
+  const saveDonorAssessmentDetails = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const age = Number(assessmentAge);
+    const weight = Number(assessmentWeight);
+    if (!Number.isInteger(age) || age < 1 || age > 120 || !Number.isFinite(weight) || weight <= 0 || weight > 500) {
+      setAssessmentError('Enter a valid age and weight.');
+      return;
+    }
+    setAssessmentSaving(true);
+    setAssessmentError('');
+    try {
+      await updateUser({ medicalInfo: { ...user?.medicalInfo, age, weight } });
+      await loadData();
+    } catch (error) {
+      setAssessmentError(error instanceof Error ? error.message : 'Unable to save assessment details.');
+    } finally {
+      setAssessmentSaving(false);
     }
   };
 
@@ -319,15 +410,15 @@ export function MongoDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {user?.role === 'donor' && eligibility && (
-          <div className={`mb-6 p-4 rounded-lg border-2 ${eligibility.isEligible ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className={`mb-6 p-4 rounded-lg border-2 ${eligibility.passesPreliminaryChecks ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
             <div className="flex items-start gap-3">
-              {eligibility.isEligible ? (
-                <CheckCircle className="text-green-600 flex-shrink-0 mt-1" size={24} />
+              {eligibility.passesPreliminaryChecks ? (
+                <CheckCircle className="text-blue-600 flex-shrink-0 mt-1" size={24} />
               ) : (
                 <Clock className="text-amber-600 flex-shrink-0 mt-1" size={24} />
               )}
               <div className="flex-1">
-                <h3 className={`font-bold ${eligibility.isEligible ? 'text-green-900' : 'text-amber-900'}`}>
+                <h3 className={`font-bold ${eligibility.passesPreliminaryChecks ? 'text-blue-900' : 'text-amber-900'}`}>
                   {eligibility.message}
                 </h3>
                 {eligibility.reasons && eligibility.reasons.length > 0 && (
@@ -337,13 +428,26 @@ export function MongoDashboard() {
                     ))}
                   </ul>
                 )}
+                {eligibility.requiresMedicalScreening && <p className="mt-3 text-sm text-gray-700">Age, weight, and donation interval are preliminary checks. A qualified provider must complete medical screening before donation.</p>}
+                {eligibility.assessmentStatus === 'pending_assessment' && (
+                  <form onSubmit={saveDonorAssessmentDetails} className="mt-4 flex flex-wrap items-end gap-3">
+                    <label className="text-sm font-medium text-gray-700">Age
+                      <input type="number" min="1" max="120" required value={assessmentAge} onChange={event => setAssessmentAge(event.target.value)} className="mt-1 block w-28 rounded border border-gray-300 px-3 py-2" />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700">Weight (kg)
+                      <input type="number" min="1" max="500" step="0.1" required value={assessmentWeight} onChange={event => setAssessmentWeight(event.target.value)} className="mt-1 block w-32 rounded border border-gray-300 px-3 py-2" />
+                    </label>
+                    <button disabled={assessmentSaving} className="rounded bg-rose-600 px-4 py-2 text-white disabled:opacity-50">{assessmentSaving ? 'Saving…' : 'Save details'}</button>
+                  </form>
+                )}
+                {assessmentError && <p role="alert" className="mt-2 text-sm text-red-700">{assessmentError}</p>}
               </div>
             </div>
           </div>
         )}
 
         <div className="mb-8">
-          <MapView markers={mapMarkers} height="300px" zoom={6} />
+          <MapView center={mapCenter} markers={mapMarkers} height="300px" zoom={6} />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
@@ -351,10 +455,13 @@ export function MongoDashboard() {
             <div className="flex gap-1 p-2 overflow-x-auto">
               {[
                 { id: 'requests', label: 'Blood Requests', icon: Droplet },
+                ...((user?.role === 'recipient' || user?.role === 'hospital') ? [{ id: 'my-requests', label: 'My Requests', icon: Clock }] : []),
+                ...(user?.role === 'donor' ? [{ id: 'my-donations', label: 'My Donations', icon: Droplet }] : []),
                 { id: 'donors', label: 'Find Donors', icon: Search },
                 { id: 'camps', label: 'Donation Camps', icon: Calendar },
                 { id: 'banks', label: 'Blood Banks', icon: Building2 },
-                ...(user?.role === 'hospital' ? [{ id: 'resources', label: 'Manage resources', icon: Building2 }] : [])
+                { id: 'reports', label: 'Reports', icon: FileText },
+                ...(['hospital', 'blood_bank'].includes(user?.role || '') ? [{ id: 'resources', label: 'Manage resources', icon: Building2 }] : [])
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -502,6 +609,32 @@ export function MongoDashboard() {
               </div>
             )}
 
+            {activeTab === 'my-requests' && (
+              <div>
+                <h2 className="mb-6 text-2xl font-bold text-gray-900">My Blood Requests</h2>
+                {myRequests.length === 0 ? <p className="py-10 text-center text-gray-600">You have not submitted any blood requests.</p> : (
+                  <div className="space-y-4">{myRequests.map(request => <BloodRequestCard key={request._id} request={request} onUpdate={loadData} />)}</div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'my-donations' && (
+              <section>
+                <h2 className="mb-6 text-2xl font-bold text-gray-900">My Donation History</h2>
+                {donationHistory.length === 0 ? <p className="py-10 text-center text-gray-600">No completed donations have been recorded for your account.</p> : (
+                  <div className="space-y-3">
+                    {donationHistory.map(donation => <article key={`${donation.requestId}-${donation.completedAt}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold text-gray-900">{donation.bloodType} · {donation.patientName}</div>
+                        <span className="text-sm text-gray-600">{donation.completedAt ? new Date(donation.completedAt).toLocaleString() : 'Completion date unavailable'}</span>
+                      </div>
+                      <div className="mt-1 text-sm text-gray-600">{donation.hospital || 'Hospital not recorded'}</div>
+                    </article>)}
+                  </div>
+                )}
+              </section>
+            )}
+
             {activeTab === 'donors' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Find Donors</h2>
@@ -631,14 +764,24 @@ export function MongoDashboard() {
 
             {activeTab === 'banks' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Blood Banks</h2>
+                <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+                  <h2 className="text-2xl font-bold text-gray-900">Blood Banks</h2>
+                  <label className="text-sm font-medium text-gray-700">Search confirmed stock by blood group
+                    <select value={bloodBankSearchType} onChange={event => void searchBloodBankStock(event.target.value)} className="ml-2 rounded-lg border border-gray-300 px-3 py-2">
+                      <option value="">All banks</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(type => <option key={type}>{type}</option>)}
+                    </select>
+                  </label>
+                </div>
+                {bloodBankSearchLoading && <p className="mb-3 text-sm text-gray-600">Searching current reported stock…</p>}
+                {bloodBankSearchError && <p role="alert" className="mb-3 text-sm text-red-700">{bloodBankSearchError}</p>}
+                <p className="mb-4 text-xs text-gray-600">Stock search reads the backend when you select a blood group and returns only entries verified within the last 24 hours.</p>
                 <div className="grid md:grid-cols-2 gap-4">
-                  {bloodBanks.length === 0 ? (
+                  {(bloodBankSearchResults ?? bloodBanks).length === 0 ? (
                     <div className="col-span-2 text-center py-12 text-gray-500">
-                      No blood banks registered
+                      {bloodBankSearchType ? 'No nearby blood banks have confirmed stock for this group.' : 'No blood banks registered'}
                     </div>
                   ) : (
-                    bloodBanks.map(bank => (
+                    (bloodBankSearchResults ?? bloodBanks).map(bank => (
                       <div key={bank._id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition">
                         <h3 className="text-lg font-bold text-gray-900 mb-2">{bank.name}</h3>
                         <div className="space-y-2 text-sm text-gray-700">
@@ -653,11 +796,14 @@ export function MongoDashboard() {
                             <div className="text-xs font-semibold text-gray-700">Reported stock</div>
                             {bank.inventory?.length ? (
                               <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-600">
-                                {bank.inventory.map(item => <span key={item.bloodType}>{item.bloodType}: {item.units}</span>)}
+                                {bank.inventory.map(item => <span key={item.bloodType} className="inline-flex flex-col rounded bg-gray-50 px-2 py-1">
+                                  <span>{item.bloodType}: {item.confirmed ? item.units : 'unconfirmed'}</span>
+                                  <span className={`text-[10px] capitalize ${item.freshness === 'fresh' ? 'text-green-700' : item.freshness === 'aging' ? 'text-amber-700' : 'text-red-700'}`}>{item.freshness || 'unverified'}{item.lastVerifiedAt ? ` · verified ${new Date(item.lastVerifiedAt).toLocaleString()}` : ''}</span>
+                                </span>)}
                               </div>
                             ) : <div className="mt-1 text-xs text-gray-500">Stock not reported</div>}
                             {bank.inventory?.some(item => item.lastUpdated) && (
-                              <div className="mt-1 text-xs text-gray-500">Updated {new Date(Math.max(...bank.inventory.map(item => item.lastUpdated ? new Date(item.lastUpdated).getTime() : 0))).toLocaleString()}</div>
+                              <div className="mt-1 text-xs text-gray-500">Stock display refreshes every {stockRefreshSeconds} seconds. A refresh does not verify physical inventory.</div>
                             )}
                           </div>
                         </div>
@@ -668,7 +814,8 @@ export function MongoDashboard() {
               </div>
             )}
 
-            {activeTab === 'resources' && user?.role === 'hospital' && <MongoResourceManagement />}
+            {activeTab === 'resources' && ['hospital', 'blood_bank'].includes(user?.role || '') && <MongoResourceManagement />}
+            {activeTab === 'reports' && <MongoReports />}
           </div>
         </div>
       </div>

@@ -15,6 +15,15 @@ A comprehensive, production-ready blood donation platform connecting donors with
 - **Admin Moderation**: Comprehensive admin panel for approving/rejecting requests and managing users
 - **Donor Network**: Maintain healthy donor network with donation history and statistics
 
+## Operational rules and verification limits
+
+- Blood requests expire 24 hours after creation or their latest successful renewal. The request owner or an administrator can renew an active or expired request; an administrator must supply a reason. The maximum renewal count is configurable in the admin settings. Fulfilled and cancelled requests cannot be renewed. Renewal history and donor notifications are recorded.
+- Only administrator-approved hospital and blood bank accounts can manage blood bank and camp resources. Institutions submit verification documents for administrator review. Verification documents are stored in MongoDB and are limited to PDF, JPEG, or PNG files up to 5 MB.
+- Stock updates require a confirmation that the entered units match physical stock. The dashboard refreshes its display on a configurable interval, while verification reminders and freshness labels are separate. Refreshing the page does not verify stock; stock older than the configured unverified threshold is excluded from confirmed availability.
+- Donor age, weight, and donation interval are preliminary checks. Missing information results in pending assessment, and passing those checks does not replace medical screening by a qualified provider. The application does not provide clinical clearance.
+- Reports are role-scoped and available as CSV, XLSX, and PDF. A report is limited to the data the current application records and its configured result caps.
+- The project does not currently include a hospital stock-system feed, SMS provider integration, a medical screening workflow, or a load test proving 10,000 concurrent users. Those capabilities require external integration or deployment validation; the application does not generate synthetic stock, verification, or capacity evidence.
+
 ## Tech Stack
 
 ### Backend

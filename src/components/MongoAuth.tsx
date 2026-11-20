@@ -19,12 +19,16 @@ export function MongoAuth() {
     password: '',
     fullName: '',
     phone: '',
-    role: 'donor' as 'donor' | 'recipient' | 'hospital',
+    role: 'donor' as 'donor' | 'recipient' | 'hospital' | 'blood_bank',
     bloodType: 'A+',
     address: '',
     city: '',
     state: '',
-    postalCode: ''
+    postalCode: '',
+    age: '',
+    weight: '',
+    institutionName: '',
+    institutionRegistrationNumber: ''
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -74,6 +78,7 @@ export function MongoAuth() {
 
         const userData = {
           ...formData,
+          medicalInfo: formData.role === 'donor' ? { age: Number(formData.age), weight: Number(formData.weight) } : undefined,
           location: {
             type: 'Point' as const,
             coordinates: [coordinates.longitude, coordinates.latitude] as [number, number],
@@ -199,12 +204,13 @@ export function MongoAuth() {
                     </label>
                     <select
                       value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value as 'donor' | 'recipient' | 'hospital' })}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value as 'donor' | 'recipient' | 'hospital' | 'blood_bank' })}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition"
                     >
                       <option value="donor">Donor</option>
                       <option value="recipient">Recipient</option>
                       <option value="hospital">Hospital</option>
+                      <option value="blood_bank">Blood bank</option>
                     </select>
                   </div>
 
@@ -228,6 +234,29 @@ export function MongoAuth() {
                     </div>
                   )}
                 </div>
+
+                {formData.role === 'donor' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="block text-sm font-medium text-gray-700">Age
+                      <input required min="1" max="120" type="number" value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3" />
+                    </label>
+                    <label className="block text-sm font-medium text-gray-700">Weight (kg)
+                      <input required min="1" max="500" step="0.1" type="number" value={formData.weight} onChange={e => setFormData({ ...formData, weight: e.target.value })} className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3" />
+                    </label>
+                  </div>
+                )}
+
+                {(formData.role === 'hospital' || formData.role === 'blood_bank') && (
+                  <div className="grid gap-4">
+                    <label className="block text-sm font-medium text-gray-700">{formData.role === 'hospital' ? 'Hospital name' : 'Blood bank name'}
+                      <input required value={formData.institutionName} onChange={e => setFormData({ ...formData, institutionName: e.target.value })} className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3" />
+                    </label>
+                    <label className="block text-sm font-medium text-gray-700">Institution registration number
+                      <input required value={formData.institutionRegistrationNumber} onChange={e => setFormData({ ...formData, institutionRegistrationNumber: e.target.value })} className="mt-2 w-full rounded-lg border border-gray-300 px-4 py-3" />
+                    </label>
+                    <p className="text-xs text-gray-600">After registering, upload your authorization documents for admin review. Resource management stays disabled until approval.</p>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

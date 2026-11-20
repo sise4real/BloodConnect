@@ -8,7 +8,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['blood_request', 'donation_camp', 'eligibility_reminder', 'response_update', 'system'],
+    enum: ['blood_request', 'donation_camp', 'eligibility_reminder', 'response_update', 'stock_verification', 'system'],
     required: true
   },
   title: {
@@ -27,7 +27,9 @@ const notificationSchema = new mongoose.Schema({
     campId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'DonationCamp'
-    }
+    },
+    bloodBankId: { type: mongoose.Schema.Types.ObjectId, ref: 'BloodBank' },
+    bloodType: String
   },
   isRead: {
     type: Boolean,

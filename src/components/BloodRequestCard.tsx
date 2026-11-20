@@ -18,8 +18,11 @@ interface BloodRequest {
   location: {
     coordinates: [number, number];
   };
-  status: string;
   requiredBy: string;
+  status: string;
+  expiresAt?: string;
+  renewalCount?: number;
+  expiredFromStatus?: 'pending' | 'approved';
   responses?: Array<{
     _id: string;
     donor: {
@@ -50,6 +53,7 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
   const [responding, setResponding] = useState(false);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   const isRequester = user?._id === request.requester._id;
   const hasResponded = request.responses?.some(r => r.donor._id === user?._id);
@@ -83,6 +87,20 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
     }
   };
 
+  const handleRenew = async () => {
+    if (!token) return;
+    setLoading(true);
+    setActionError('');
+    try {
+      await api.bloodRequests.renew(request._id, {}, token);
+      onUpdate();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to renew request');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 hover:shadow-lg transition">
       <div className="flex items-start justify-between mb-4">
@@ -92,6 +110,7 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
             <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${urgencyColors[request.urgency]}`}>
               {request.urgency.toUpperCase()}
             </span>
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium capitalize text-gray-700">{request.status}</span>
           </div>
           <p className="text-gray-600 text-sm">{request.reason}</p>
         </div>
@@ -121,6 +140,12 @@ export function BloodRequestCard({ request, onUpdate }: { request: BloodRequest;
           <span>Requested by: {request.requester.fullName}</span>
         </div>
       </div>
+
+      <div className="mb-3 text-xs text-gray-600">{request.status === 'expired' ? 'Expired' : 'Expires'}: {request.expiresAt ? new Date(request.expiresAt).toLocaleString() : '24 hours after creation'} · Renewals: {request.renewalCount || 0}</div>
+      {(request.status === 'pending' || request.status === 'approved' || request.status === 'expired') && isRequester && (
+        <button disabled={loading} onClick={() => void handleRenew()} className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50">{loading ? 'Renewing…' : 'Renew for 24 hours'}</button>
+      )}
+      {actionError && <p role="alert" className="mt-2 text-sm text-red-700">{actionError}</p>}
 
       {request.status === 'approved' && user?.role === 'donor' && !isRequester && (
         <div className="border-t pt-4 mt-4">

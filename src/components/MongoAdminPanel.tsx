@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useMongoAuth } from '../contexts/useMongoAuth';
 import { api } from '../lib/api';
 import { MongoResourceManagement } from './MongoResourceManagement';
+import { MongoReports } from './MongoReports';
 import {
   LogOut,
   Check,
@@ -12,10 +13,12 @@ import {
   Calendar,
   Building2,
   TrendingUp,
-  Shield
+  Shield,
+  FileText
 } from 'lucide-react';
 
-interface AdminUser { _id: string; fullName: string; email: string; role: string; bloodType?: string; isActive: boolean; isVerified?: boolean }
+interface AdminUser { _id: string; fullName: string; email: string; role: string; bloodType?: string; isActive: boolean; isVerified?: boolean; institutionVerificationStatus?: string; institutionName?: string; institutionRegistrationNumber?: string }
+interface InstitutionDocumentRecord { _id: string; originalName: string; uploadedAt: string; institution?: { _id: string; fullName: string; institutionName?: string; institutionRegistrationNumber?: string; institutionVerificationStatus?: string } }
 interface AdminItem {
   _id: string;
   name?: string;
@@ -38,10 +41,11 @@ interface AdminItem {
   contact?: { phone?: string };
   hours?: string;
   responses?: Array<{ status?: string; verifiedAt?: string; verifiedBy?: string }>;
+  expiredFromStatus?: 'pending' | 'approved';
 }
 interface DashboardStats {
   users: { total: number; activeDonors: number };
-  requests: { total: number; pending: number; approved: number; fulfilled: number };
+  requests: { total: number; pending: number; approved: number; fulfilled: number; cancelled: number; expired: number };
   donations: { completed: number };
   bloodTypeDemand: Array<{ _id: string; requests: number; unitsNeeded: number }>;
   camps: { active: number; pending: number };
@@ -57,6 +61,9 @@ export function AdminPanel() {
   const [pending, setPending] = useState<PendingItems>({ requests: [], camps: [], bloodBanks: [] });
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [approvedRequests, setApprovedRequests] = useState<AdminItem[]>([]);
+  const [expiredRequests, setExpiredRequests] = useState<AdminItem[]>([]);
+  const [institutionDocuments, setInstitutionDocuments] = useState<InstitutionDocumentRecord[]>([]);
+  const [settings, setSettings] = useState({ maxRequestRenewals: 3, stockDashboardRefreshSeconds: 30, stockFreshHours: 6, stockAgingHours: 12, stockUnverifiedHours: 24 });
 
   const loadDashboard = useCallback(async () => {
     if (!token) return;
@@ -91,11 +98,37 @@ export function AdminPanel() {
   const loadApprovedRequests = async () => {
     if (!token) return;
     try {
-      const data = await api.bloodRequests.getAll({ status: 'approved' }, token);
-      setApprovedRequests(data);
+      const [approved, expired] = await Promise.all([
+        api.bloodRequests.getAll({ status: 'approved' }, token),
+        api.bloodRequests.getAll({ status: 'expired' }, token)
+      ]);
+      setApprovedRequests(approved);
+      setExpiredRequests(expired);
     } catch (error) {
       console.error('Failed to load approved requests:', error);
     }
+  };
+
+  const handleAdminRenewRequest = async (id: string) => {
+    if (!token) return;
+    const reason = prompt('Reason for renewing this request:');
+    if (!reason?.trim()) return;
+    try {
+      await api.bloodRequests.renew(id, { reason }, token);
+      await Promise.all([loadApprovedRequests(), loadPending(), loadDashboard()]);
+    } catch (error) { alert(error instanceof Error ? error.message : 'Unable to renew request'); }
+  };
+
+  const loadVerificationDocuments = async () => {
+    if (!token) return;
+    try { setInstitutionDocuments(await api.institutionDocuments.getAll(token)); }
+    catch (error) { console.error('Failed to load institution documents:', error); }
+  };
+
+  const loadPlatformSettings = async () => {
+    if (!token) return;
+    try { setSettings(await api.settings.get(token)); }
+    catch (error) { console.error('Failed to load platform settings:', error); }
   };
 
   useEffect(() => {
@@ -107,8 +140,7 @@ export function AdminPanel() {
     if (!token) return;
     try {
       await api.bloodRequests.moderate(id, { status, moderationNotes: notes }, token);
-      loadPending();
-      loadDashboard();
+      await Promise.all([loadPending(), loadApprovedRequests(), loadDashboard()]);
     } catch (error) {
       console.error('Failed to moderate request:', error);
     }
@@ -161,14 +193,39 @@ export function AdminPanel() {
     }
   };
 
-  const handleUpdateHospitalVerification = async (hospitalId: string, isVerified: boolean) => {
+  const handleUpdateHospitalVerification = async (hospitalId: string, status: 'approved' | 'rejected' | 'suspended') => {
     if (!token) return;
     try {
-      await api.admin.updateUser(hospitalId, { isVerified }, token);
-      await loadUsers();
+      const note = status === 'approved' ? '' : prompt(`Reason for ${status}:`) || '';
+      if (status !== 'approved' && !note.trim()) return;
+      await api.admin.updateUser(hospitalId, { institutionVerificationStatus: status, institutionReviewNote: note }, token);
+      await Promise.all([loadUsers(), loadVerificationDocuments()]);
     } catch (error) {
       console.error('Failed to update hospital verification:', error);
     }
+  };
+
+  const handleDownloadInstitutionDocument = async (item: InstitutionDocumentRecord) => {
+    if (!token) return;
+    try {
+      const blob = await api.institutionDocuments.download(item._id, token);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = item.originalName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) { alert(error instanceof Error ? error.message : 'Unable to download document'); }
+  };
+
+  const handleSaveSettings = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) return;
+    try {
+      const saved = await api.settings.update(settings, token);
+      setSettings(saved);
+      alert('Platform settings saved.');
+    } catch (error) { alert(error instanceof Error ? error.message : 'Unable to save settings'); }
   };
 
   return (
@@ -203,13 +260,16 @@ export function AdminPanel() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-8">
           <div className="border-b border-gray-200">
-            <div className="flex gap-1 p-2">
+            <div className="flex gap-1 overflow-x-auto p-2">
               {[
                 { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
                 { id: 'pending', label: 'Pending Approvals', icon: AlertTriangle },
                 { id: 'approved-requests', label: 'Approved Requests', icon: Droplet },
                 { id: 'resources', label: 'Manage Resources', icon: Building2 },
-                { id: 'users', label: 'Users', icon: Users }
+                { id: 'users', label: 'Users', icon: Users },
+                { id: 'verification', label: 'Institution Verification', icon: FileText },
+                { id: 'settings', label: 'Settings', icon: Shield },
+                { id: 'reports', label: 'Reports', icon: FileText }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -217,8 +277,10 @@ export function AdminPanel() {
                     setActiveTab(tab.id);
                     if (tab.id === 'users') loadUsers();
                     if (tab.id === 'approved-requests') loadApprovedRequests();
+                    if (tab.id === 'verification') { loadUsers(); loadVerificationDocuments(); }
+                    if (tab.id === 'settings') loadPlatformSettings();
                   }}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
+                  className={`flex shrink-0 items-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
                     activeTab === tab.id
                       ? 'bg-rose-100 text-rose-700'
                       : 'text-gray-600 hover:bg-gray-100'
@@ -254,7 +316,8 @@ export function AdminPanel() {
                     <div className="text-3xl font-bold text-red-900 mb-1">{stats.requests.total}</div>
                     <div className="text-sm text-red-700">Blood Requests</div>
                     <div className="text-xs text-red-600 mt-2">{stats.requests.pending} pending</div>
-                    <div className="text-xs text-red-600">{stats.requests.approved} approved · {stats.requests.fulfilled} fulfilled</div>
+                    <div className="text-xs text-red-600">{stats.requests.pending} pending · {stats.requests.approved} approved</div>
+                    <div className="text-xs text-red-600">{stats.requests.fulfilled} fulfilled · {stats.requests.expired} expired · {stats.requests.cancelled} cancelled</div>
                   </div>
 
                   <div className="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-6 border border-rose-200">
@@ -507,7 +570,7 @@ export function AdminPanel() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Approved Blood Requests</h2>
                 <p className="text-sm text-gray-600 mb-6">Requests can be fulfilled only after a completed donation has been recorded and verified.</p>
-                {approvedRequests.length === 0 ? <p className="text-gray-600">No approved requests.</p> : (
+                {approvedRequests.length === 0 && expiredRequests.length === 0 ? <p className="text-gray-600">No approved or expired requests.</p> : (
                   <div className="space-y-4">
                     {approvedRequests.map(req => {
                       const verified = req.responses?.some(response => response.status === 'completed' && response.verifiedAt && response.verifiedBy);
@@ -517,18 +580,77 @@ export function AdminPanel() {
                           <p className="text-sm text-gray-600">{req.unitsNeeded} units · {req.hospital?.name || 'Hospital not specified'}</p>
                           <p className="text-sm mt-1">{verified ? 'Verified completed donation recorded' : 'No verified completed donation recorded yet'}</p>
                         </div>
-                        <button disabled={!verified} onClick={async () => {
-                          try {
-                            await api.bloodRequests.moderate(req._id, { status: 'fulfilled' }, token!);
-                            await Promise.all([loadApprovedRequests(), loadDashboard()]);
-                          } catch (error) { alert(error instanceof Error ? error.message : 'Unable to fulfill request'); }
-                        }} className="rounded-lg bg-green-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300">Mark fulfilled</button>
+                        <div className="flex flex-wrap gap-2">
+                          <button disabled={!verified} onClick={async () => {
+                            try {
+                              await api.bloodRequests.moderate(req._id, { status: 'fulfilled' }, token!);
+                              await Promise.all([loadApprovedRequests(), loadDashboard()]);
+                            } catch (error) { alert(error instanceof Error ? error.message : 'Unable to fulfill request'); }
+                          }} className="rounded-lg bg-green-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300">Mark fulfilled</button>
+                          <button onClick={() => void handleAdminRenewRequest(req._id)} className="rounded-lg border border-rose-300 px-4 py-2 text-rose-700">Renew</button>
+                          <button onClick={() => {
+                            const reason = prompt('Reason for cancellation:');
+                            if (reason?.trim()) void handleModerateRequest(req._id, 'cancelled', reason);
+                          }} className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700">Cancel request</button>
+                        </div>
                       </article>;
                     })}
+                    {expiredRequests.filter(req => req.expiredFromStatus === 'approved').map(req => (
+                      <article key={req._id} className="rounded-lg border border-amber-200 bg-amber-50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div><h3 className="font-semibold text-gray-900">{req.patientName} · {req.bloodType}</h3><p className="text-sm text-gray-600">Expired approved request · {req.unitsNeeded} units</p></div>
+                        <button onClick={() => void handleAdminRenewRequest(req._id)} className="rounded-lg bg-rose-600 px-4 py-2 text-white">Renew for 24 hours</button>
+                      </article>
+                    ))}
                   </div>
                 )}
               </div>
             )}
+
+            {activeTab === 'verification' && (
+              <section>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Institution verification documents</h2>
+                <p className="text-sm text-gray-600 mb-6">Review the submitted institutional documents before changing the account verification status.</p>
+                {institutionDocuments.length === 0 ? <p className="text-gray-600">No institutional documents have been submitted.</p> : (
+                  <div className="space-y-3">
+                    {institutionDocuments.map(doc => (
+                      <article key={doc._id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 p-4">
+                        <div>
+                          <div className="font-semibold text-gray-900">{doc.institution?.institutionName || doc.institution?.fullName || 'Institution'}</div>
+                          <div className="text-sm text-gray-600">Registration: {doc.institution?.institutionRegistrationNumber || 'Not provided'} · {doc.originalName}</div>
+                          <div className="text-xs text-gray-500">Uploaded {new Date(doc.uploadedAt).toLocaleString()} · Status: {doc.institution?.institutionVerificationStatus || 'pending'}</div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => void handleDownloadInstitutionDocument(doc)} className="rounded border border-gray-300 px-3 py-2 text-sm">Download</button>
+                          {doc.institution?._id && <button onClick={() => handleUpdateHospitalVerification(doc.institution!._id, 'approved')} className="rounded bg-green-600 px-3 py-2 text-sm text-white">Approve</button>}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {activeTab === 'settings' && (
+              <form onSubmit={handleSaveSettings} className="max-w-2xl space-y-5">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Platform settings</h2>
+                  <p className="mt-1 text-sm text-gray-600">Set request renewal limits and stock freshness/display intervals.</p>
+                </div>
+                {([
+                  ['maxRequestRenewals', 'Maximum request renewals', 1, 10],
+                  ['stockDashboardRefreshSeconds', 'Stock display refresh (seconds)', 10, 300],
+                  ['stockFreshHours', 'Fresh stock threshold (hours)', 1, 24],
+                  ['stockAgingHours', 'Aging stock threshold (hours)', 2, 48],
+                  ['stockUnverifiedHours', 'Unverified stock threshold (hours)', 6, 168]
+                ] as const).map(([key, label, min, max]) => (
+                  <label key={key} className="block text-sm font-medium text-gray-700">{label}
+                    <input type="number" min={min} max={max} step="1" required value={settings[key]} onChange={event => setSettings({ ...settings, [key]: Number(event.target.value) })} className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2" />
+                  </label>
+                ))}
+                <button className="rounded-lg bg-rose-600 px-5 py-2 font-semibold text-white">Save settings</button>
+              </form>
+            )}
+            {activeTab === 'reports' && <MongoReports />}
 
             {activeTab === 'users' && (
               <div>
@@ -549,11 +671,6 @@ export function AdminPanel() {
                       {users.map((u) => (
                         <tr key={u._id}>
                           <td className="px-6 py-4">
-                            {u.role === 'hospital' ? <button onClick={() => handleUpdateHospitalVerification(u._id, !u.isVerified)} className={`px-3 py-1 text-sm rounded font-medium ${u.isVerified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                              {u.isVerified ? 'Verified · Revoke' : 'Verify hospital'}
-                            </button> : <span className="text-sm text-gray-400">—</span>}
-                          </td>
-                          <td className="px-6 py-4">
                             <div className="font-medium text-gray-900">{u.fullName}</div>
                             <div className="text-sm text-gray-600">{u.email}</div>
                           </td>
@@ -569,6 +686,16 @@ export function AdminPanel() {
                             }`}>
                               {u.isActive ? 'Active' : 'Inactive'}
                             </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {['hospital', 'blood_bank'].includes(u.role) ? (
+                              <div className="flex flex-wrap gap-1">
+                                <span className="mr-1 text-xs capitalize">{u.institutionVerificationStatus || (u.isVerified ? 'approved' : 'pending')}</span>
+                                {u.institutionVerificationStatus !== 'approved' && <button onClick={() => handleUpdateHospitalVerification(u._id, 'approved')} className="rounded bg-green-100 px-2 py-1 text-xs text-green-800">Approve</button>}
+                                {u.institutionVerificationStatus !== 'rejected' && <button onClick={() => handleUpdateHospitalVerification(u._id, 'rejected')} className="rounded bg-red-100 px-2 py-1 text-xs text-red-800">Reject</button>}
+                                {u.institutionVerificationStatus !== 'suspended' && <button onClick={() => handleUpdateHospitalVerification(u._id, 'suspended')} className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-800">Suspend</button>}
+                              </div>
+                            ) : <span className="text-sm text-gray-400">—</span>}
                           </td>
                           <td className="px-6 py-4">
                             {u.role !== 'admin' && (

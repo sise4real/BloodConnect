@@ -7,6 +7,7 @@ import {
   moderateBloodRequest,
   updateResponseStatus,
   verifyLivesSaved,
+  renewBloodRequest,
   deleteBloodRequest
 } from '../controllers/bloodRequestController.js';
 import { protect, adminOnly, requesterRole } from '../middleware/auth.js';
@@ -22,6 +23,7 @@ router.route('/:id')
   .delete(protect, deleteBloodRequest);
 
 router.post('/:id/respond', protect, respondToRequest);
+router.put('/:id/renew', protect, renewBloodRequest);
 router.put('/:id/moderate', protect, adminOnly, moderateBloodRequest);
 router.put('/:id/response-status', protect, updateResponseStatus);
 router.put('/:id/lives-saved', protect, adminOnly, verifyLivesSaved);

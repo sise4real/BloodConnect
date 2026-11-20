@@ -29,14 +29,20 @@ export const getCamps = async (req, res) => {
       date: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
     };
 
-    if (latitude && longitude) {
+    if (latitude !== undefined && longitude !== undefined) {
+      const lat = Number(latitude);
+      const lon = Number(longitude);
+      const distance = radius === undefined ? 100 : Number(radius);
+      if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180 || !Number.isFinite(distance) || distance <= 0) {
+        return res.status(400).json({ message: 'Invalid location or search radius' });
+      }
       query.location = {
         $near: {
           $geometry: {
             type: 'Point',
-            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+            coordinates: [lon, lat]
           },
-          $maxDistance: radius ? parseInt(radius) * 1000 : 100000
+          $maxDistance: distance * 1000
         }
       };
     }

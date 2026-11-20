@@ -7,9 +7,25 @@ const generateToken = (id) => {
   });
 };
 
+const validateMedicalInfo = medicalInfo => {
+  if (!medicalInfo || typeof medicalInfo !== 'object') return null;
+  if (medicalInfo.age !== undefined && (!Number.isInteger(Number(medicalInfo.age)) || Number(medicalInfo.age) < 1 || Number(medicalInfo.age) > 120)) {
+    return 'Age must be a whole number between 1 and 120';
+  }
+  if (medicalInfo.weight !== undefined && (!Number.isFinite(Number(medicalInfo.weight)) || Number(medicalInfo.weight) <= 0 || Number(medicalInfo.weight) > 500)) {
+    return 'Weight must be greater than 0 and no more than 500 kg';
+  }
+  return null;
+};
+
 export const register = async (req, res) => {
   try {
-    const { email, password, fullName, role, bloodType, phone, location, medicalInfo } = req.body;
+    const { email, password, fullName, role, bloodType, phone, location, medicalInfo, institutionName, institutionRegistrationNumber } = req.body;
+    const medicalInfoError = validateMedicalInfo(medicalInfo);
+    if (medicalInfoError) return res.status(400).json({ message: medicalInfoError });
+    if (['hospital', 'blood_bank'].includes(role) && (!String(institutionName || '').trim() || !String(institutionRegistrationNumber || '').trim())) {
+      return res.status(400).json({ message: 'Institution name and registration number are required' });
+    }
 
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -21,11 +37,15 @@ export const register = async (req, res) => {
       password,
       fullName,
       // Keep public roles available while preventing self assignment of admin.
-      role: ['donor', 'recipient', 'hospital'].includes(role) ? role : 'donor',
+      role: ['donor', 'recipient', 'hospital', 'blood_bank'].includes(role) ? role : 'donor',
       bloodType,
       phone,
       location,
-      medicalInfo
+      medicalInfo,
+      institutionName: ['hospital', 'blood_bank'].includes(role) ? institutionName : undefined,
+      institutionRegistrationNumber: ['hospital', 'blood_bank'].includes(role) ? institutionRegistrationNumber : undefined,
+      isVerified: false,
+      institutionVerificationStatus: ['hospital', 'blood_bank'].includes(role) ? 'pending' : 'approved'
     });
 
     const token = generateToken(user._id);
@@ -37,6 +57,11 @@ export const register = async (req, res) => {
       role: user.role,
       bloodType: user.bloodType,
       location: user.location,
+      isVerified: user.isVerified,
+      institutionVerificationStatus: user.institutionVerificationStatus,
+      institutionName: user.institutionName,
+      institutionRegistrationNumber: user.institutionRegistrationNumber,
+      medicalInfo: user.medicalInfo,
       token
     });
   } catch (error) {
@@ -64,6 +89,11 @@ export const login = async (req, res) => {
         role: user.role,
         bloodType: user.bloodType,
         location: user.location,
+        isVerified: user.isVerified,
+        institutionVerificationStatus: user.institutionVerificationStatus,
+        institutionName: user.institutionName,
+        institutionRegistrationNumber: user.institutionRegistrationNumber,
+        medicalInfo: user.medicalInfo,
         token
       });
     } else {
@@ -88,6 +118,10 @@ export const updateProfile = async (req, res) => {
     const user = await User.findById(req.user._id);
 
     if (user) {
+      if (req.body.medicalInfo !== undefined) {
+        const medicalInfoError = validateMedicalInfo(req.body.medicalInfo);
+        if (medicalInfoError) return res.status(400).json({ message: medicalInfoError });
+      }
       user.fullName = req.body.fullName || user.fullName;
       user.phone = req.body.phone || user.phone;
       user.bloodType = req.body.bloodType || user.bloodType;
@@ -108,7 +142,11 @@ export const updateProfile = async (req, res) => {
         role: updatedUser.role,
         bloodType: updatedUser.bloodType,
         location: updatedUser.location,
-        availability: updatedUser.availability
+        availability: updatedUser.availability,
+        medicalInfo: updatedUser.medicalInfo,
+        institutionVerificationStatus: updatedUser.institutionVerificationStatus,
+        institutionName: updatedUser.institutionName,
+        institutionRegistrationNumber: updatedUser.institutionRegistrationNumber
       });
     } else {
       res.status(404).json({ message: 'User not found' });
