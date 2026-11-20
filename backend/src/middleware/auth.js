@@ -42,6 +42,16 @@ export const hospitalOrAdmin = (req, res, next) => {
   }
 };
 
+export const verifiedInstitutionOrAdmin = (req, res, next) => {
+  if (req.user?.role === 'admin') return next();
+  const verificationStatus = req.user?.institutionVerificationStatus;
+  const verified = verificationStatus === 'approved' || (!verificationStatus && req.user?.isVerified);
+  if (['hospital', 'blood_bank'].includes(req.user?.role) && verified) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Administrative verification is required to manage institutional resources.' });
+};
+
 export const requesterRole = (req, res, next) => {
   if (req.user && ['recipient', 'hospital'].includes(req.user.role)) {
     next();

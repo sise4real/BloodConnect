@@ -16,16 +16,22 @@ export interface MongoUser {
   };
   phone?: string;
   availability?: boolean;
+  medicalInfo?: { age?: number; weight?: number; conditions?: string[] };
+  isVerified?: boolean;
+  institutionVerificationStatus?: 'pending' | 'approved' | 'rejected' | 'suspended';
 }
 
 export interface RegistrationData {
   email: string;
   password: string;
   fullName: string;
-  role: 'donor' | 'recipient' | 'hospital';
+  role: 'donor' | 'recipient' | 'hospital' | 'blood_bank';
   bloodType?: string;
   phone: string;
   location: NonNullable<MongoUser['location']>;
+  medicalInfo?: MongoUser['medicalInfo'];
+  institutionName?: string;
+  institutionRegistrationNumber?: string;
 }
 
 interface MongoAuthContextType {

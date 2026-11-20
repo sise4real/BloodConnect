@@ -11,6 +11,9 @@ import bloodBankRoutes from './routes/bloodBankRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import publicStatsRoutes from './routes/publicStatsRoutes.js';
+import institutionDocumentRoutes from './routes/institutionDocumentRoutes.js';
+import settingsRoutes from './routes/settingsRoutes.js';
+import reportRoutes from './routes/reportRoutes.js';
 import { startEligibilityReminderJob } from './jobs/eligibilityReminderJob.js';
 
 dotenv.config();
@@ -35,6 +38,9 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/public/stats', publicStatsRoutes);
+app.use('/api/institution-documents', institutionDocumentRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/reports', reportRoutes);
 app.use('/api/blood-requests', bloodRequestRoutes);
 app.use('/api/donors', donorRoutes);
 app.use('/api/camps', campRoutes);
@@ -44,8 +50,9 @@ app.use('/api/notifications', notificationRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({
-    message: 'Something went wrong!',
+  const status = err.type === 'entity.too.large' ? 413 : 500;
+  res.status(status).json({
+    message: status === 413 ? 'Upload must be 5 MB or smaller' : 'Something went wrong!',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });

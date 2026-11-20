@@ -55,6 +55,18 @@ Authorization: Bearer <your-jwt-token>
 
 ### Available Endpoints
 
+#### Institution verification and platform settings
+- `POST /institution-documents` - Upload an institution verification document (hospital/blood bank account; PDF, JPEG, or PNG, up to 5 MB)
+- `GET /institution-documents` - List submitted documents (admin only)
+- `GET /institution-documents/:id/download` - Download a submitted document (admin only)
+- `GET /settings/public` - Read public stock freshness/display intervals
+- `GET /settings` - Read platform settings (admin only)
+- `PUT /settings` - Update platform settings (admin only)
+
+#### Reports and request renewals
+- `GET /reports/:report` - Download an authorized CSV, XLSX, or PDF report; supported reports include `users`, `requests`, `donations`, `blood-stock`, `blood-banks`, `institution-summary`, `camps`, `eligibility`, `activity`, and `monthly-trends`
+- `PUT /blood-requests/:id/renew` - Renew an eligible request as its owner or an administrator; administrators must provide a reason
+
 #### Auth
 - `POST /auth/register` - Register new user
 - `POST /auth/login` - Login

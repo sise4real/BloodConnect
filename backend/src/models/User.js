@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['donor', 'recipient', 'hospital', 'admin'],
+    enum: ['donor', 'recipient', 'hospital', 'blood_bank', 'admin'],
     default: 'donor'
   },
   bloodType: {
@@ -68,6 +68,21 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  institutionVerificationStatus: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'suspended']
+  },
+  institutionName: { type: String, trim: true },
+  institutionRegistrationNumber: { type: String, trim: true },
+  institutionVerifiedAt: Date,
+  institutionVerifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  institutionReviewNote: { type: String, trim: true },
+  institutionVerificationHistory: [{
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'suspended'], required: true },
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    changedAt: { type: Date, default: Date.now },
+    note: { type: String, trim: true }
+  }],
   isActive: {
     type: Boolean,
     default: true

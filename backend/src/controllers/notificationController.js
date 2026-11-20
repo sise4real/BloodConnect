@@ -17,7 +17,7 @@ export const createNotification = async (userId, type, title, message, data = {}
   }
 };
 
-export const notifyNearbyDonors = async (bloodRequest) => {
+export const notifyNearbyDonors = async (bloodRequest, { renewed = false } = {}) => {
   try {
     const threeMonthsAgo = new Date();
     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -28,8 +28,8 @@ export const notifyNearbyDonors = async (bloodRequest) => {
       availability: true,
       $and: [
         { $or: [{ lastDonation: null }, { lastDonation: { $lte: threeMonthsAgo } }] },
-        { $or: [{ 'medicalInfo.age': null }, { 'medicalInfo.age': { $gte: 18, $lte: 65 } }] },
-        { $or: [{ 'medicalInfo.weight': null }, { 'medicalInfo.weight': { $gte: 50 } }] }
+        { 'medicalInfo.age': { $gte: 18, $lte: 65 } },
+        { 'medicalInfo.weight': { $gte: 50 } }
       ],
       location: {
         $near: {
@@ -45,8 +45,12 @@ export const notifyNearbyDonors = async (bloodRequest) => {
     const notifications = donors.map(donor => ({
       user: donor._id,
       type: 'blood_request',
-      title: 'Urgent Blood Request Nearby',
-      message: `${bloodRequest.patientName} needs ${bloodRequest.bloodType} blood urgently at ${bloodRequest.hospital.name}`,
+      title: renewed
+        ? bloodRequest.status === 'approved' ? 'Blood request renewed nearby' : 'Blood request renewal awaiting approval'
+        : bloodRequest.status === 'approved' ? 'Blood request nearby' : 'Blood request awaiting approval',
+      message: renewed && bloodRequest.status !== 'approved'
+        ? `A nearby request for ${bloodRequest.bloodType} blood was renewed and is awaiting admin approval. You can respond after approval.`
+        : `${bloodRequest.patientName} needs ${bloodRequest.bloodType} blood at ${bloodRequest.hospital?.name || 'a nearby hospital'}.${bloodRequest.status === 'approved' ? '' : ' The request is awaiting admin approval.'}`,
       data: { bloodRequestId: bloodRequest._id }
     }));
 
@@ -74,7 +78,7 @@ export const notifyNearbyDonorsOfCamp = async (camp) => {
     });
 
     const notifications = donors
-      .filter(donor => getDonorEligibility(donor).isEligible)
+      .filter(donor => getDonorEligibility(donor).passesPreliminaryChecks)
       .map(donor => ({
         user: donor._id,
         type: 'donation_camp',

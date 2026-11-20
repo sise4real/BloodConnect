@@ -34,6 +34,8 @@ const initialCamp = { name: '', description: '', address: '', venue: '', longitu
 
 export function MongoResourceManagement() {
   const { token, user } = useMongoAuth();
+  const isInstitutionAccount = ['hospital', 'blood_bank'].includes(user?.role || '');
+  const isInstitutionVerified = user?.institutionVerificationStatus === 'approved' || (!user?.institutionVerificationStatus && user?.isVerified === true);
   const [banks, setBanks] = useState<BankRecord[]>([]);
   const [camps, setCamps] = useState<CampRecord[]>([]);
   const [busy, setBusy] = useState(false);
@@ -44,10 +46,18 @@ export function MongoResourceManagement() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [bankForm, setBankForm] = useState(initialBank);
   const [inventoryForm, setInventoryForm] = useState<Record<string, string>>(blankInventory);
+  const [inventoryConfirmed, setInventoryConfirmed] = useState(false);
   const [campForm, setCampForm] = useState(initialCamp);
+  const [verificationFile, setVerificationFile] = useState<File | null>(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState('');
 
   const loadResources = useCallback(async () => {
     if (!token) return;
+    if (isInstitutionAccount && !isInstitutionVerified) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -62,7 +72,7 @@ export function MongoResourceManagement() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, isInstitutionAccount, isInstitutionVerified]);
 
   useEffect(() => { void loadResources(); }, [loadResources]);
 
@@ -78,6 +88,7 @@ export function MongoResourceManagement() {
     const coords = locationDefaults();
     setBankForm({ ...initialBank, ...coords, address: user?.location?.address ?? '', city: user?.location?.city ?? '' });
     setInventoryForm(blankInventory());
+    setInventoryConfirmed(false);
     setCampForm({ ...initialCamp, ...coords, address: user?.location?.address ?? '' });
     setFormType(type);
   };
@@ -95,6 +106,7 @@ export function MongoResourceManagement() {
       ...blankInventory(),
       ...Object.fromEntries((bank.inventory ?? []).map(item => [item.bloodType, String(item.units)]))
     });
+    setInventoryConfirmed(false);
     setFormType('bank');
   };
 
@@ -151,7 +163,8 @@ export function MongoResourceManagement() {
       location: { type: 'Point', coordinates: [longitude, latitude], address: bankForm.address.trim(), city: bankForm.city.trim() },
       contact: { phone: bankForm.phone.trim(), email: bankForm.email.trim(), website: bankForm.website.trim() },
       hours: bankForm.hours.trim(),
-      inventory
+      inventory,
+      stockConfirmed: inventory.length > 0 && inventoryConfirmed
     };
     setBusy(true);
     setError('');
@@ -203,8 +216,40 @@ export function MongoResourceManagement() {
 
   const closeForm = () => { setFormType(null); setEditingId(null); setError(''); };
 
+  const submitVerificationDocument = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token || !verificationFile) return;
+    setVerificationBusy(true);
+    setVerificationMessage('');
+    setError('');
+    try {
+      await api.institutionDocuments.upload(verificationFile, token);
+      setVerificationFile(null);
+      setVerificationMessage('Document submitted for administrator review.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to submit document.');
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
   return (
     <section className="space-y-6">
+      {isInstitutionAccount && !isInstitutionVerified && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="text-xl font-bold text-amber-950">Institution verification required</h2>
+          <p className="mt-2 text-sm text-amber-900">Status: {user?.institutionVerificationStatus || 'pending'}. Upload an institutional authorization document. Blood bank and camp management remains unavailable until an administrator approves the account.</p>
+          {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+          {verificationMessage && <p role="status" className="mt-3 text-sm text-green-800">{verificationMessage}</p>}
+          <form onSubmit={submitVerificationDocument} className="mt-4 flex flex-wrap items-center gap-3">
+            <input type="file" required accept="application/pdf,image/jpeg,image/png" onChange={event => setVerificationFile(event.target.files?.[0] ?? null)} />
+            <button disabled={!verificationFile || verificationBusy} className="rounded-lg bg-rose-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{verificationBusy ? 'Uploading…' : 'Submit verification document'}</button>
+          </form>
+          <p className="mt-2 text-xs text-gray-600">PDF, JPEG, or PNG; maximum 5 MB.</p>
+        </div>
+      )}
+      {isInstitutionAccount && !isInstitutionVerified ? null : (
+      <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Manage blood banks and camps</h2>
@@ -263,6 +308,10 @@ export function MongoResourceManagement() {
                     </label>
                   ))}
                 </div>
+                <label className="mt-4 flex items-start gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={inventoryConfirmed} onChange={event => setInventoryConfirmed(event.target.checked)} />
+                  I confirm these units reflect the blood physically available now.
+                </label>
               </fieldset>
             </>
           ) : (
@@ -312,6 +361,8 @@ export function MongoResourceManagement() {
             ))}
           </div>
         </div>
+      )}
+      </>
       )}
     </section>
   );

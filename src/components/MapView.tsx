@@ -107,13 +107,30 @@ export function MapView({
         .addTo(map);
 
       if (marker.title || marker.info) {
-        leafletMarker.bindPopup(`
-          <div class="text-sm">
-            <strong class="block text-base mb-1">${marker.title}</strong>
-            ${marker.info ? `<p class="text-gray-600">${marker.info}</p>` : ''}
-            ${marker.directionsUrl ? `<a class="mt-2 inline-block text-blue-700 underline" href="${marker.directionsUrl}" target="_blank" rel="noreferrer">Get directions</a>` : ''}
-          </div>
-        `);
+        const popup = document.createElement('div');
+        popup.className = 'text-sm';
+        if (marker.title) {
+          const title = document.createElement('strong');
+          title.className = 'block text-base mb-1';
+          title.textContent = marker.title;
+          popup.append(title);
+        }
+        if (marker.info) {
+          const info = document.createElement('p');
+          info.className = 'text-gray-600';
+          info.textContent = marker.info;
+          popup.append(info);
+        }
+        if (marker.directionsUrl) {
+          const directions = document.createElement('a');
+          directions.className = 'mt-2 inline-block text-blue-700 underline';
+          directions.href = marker.directionsUrl;
+          directions.target = '_blank';
+          directions.rel = 'noopener noreferrer';
+          directions.textContent = 'Get directions';
+          popup.append(directions);
+        }
+        leafletMarker.bindPopup(popup);
       }
 
       if (marker.onClick) {

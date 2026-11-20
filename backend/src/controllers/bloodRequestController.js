@@ -2,6 +2,7 @@ import BloodRequest from '../models/BloodRequest.js';
 import User from '../models/User.js';
 import { notifyNearbyDonors } from './notificationController.js';
 import { getDonorEligibility } from '../utils/donorEligibility.js';
+import { readSettings } from './settingsController.js';
 
 export const createBloodRequest = async (req, res) => {
   try {
@@ -15,6 +16,7 @@ export const createBloodRequest = async (req, res) => {
       location,
       reason,
       requiredBy,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       requester: req.user._id,
       status: 'pending'
     });
@@ -27,13 +29,74 @@ export const createBloodRequest = async (req, res) => {
   }
 };
 
+export const renewBloodRequest = async (req, res) => {
+  try {
+    const bloodRequest = await BloodRequest.findById(req.params.id);
+    if (!bloodRequest) return res.status(404).json({ message: 'Blood request not found' });
+
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = bloodRequest.requester.toString() === req.user._id.toString() && ['recipient', 'hospital'].includes(req.user.role);
+    if (!isAdmin && !isOwner) return res.status(403).json({ message: 'Only the request owner or an administrator can renew this request' });
+    if (['fulfilled', 'cancelled'].includes(bloodRequest.status)) return res.status(400).json({ message: 'Fulfilled or cancelled requests cannot be renewed' });
+    if (bloodRequest.status === 'rejected') return res.status(400).json({ message: 'Rejected requests cannot be renewed' });
+    if (!['pending', 'approved', 'expired'].includes(bloodRequest.status)) return res.status(400).json({ message: 'Only active or expired requests can be renewed' });
+    if (isAdmin && (typeof req.body.reason !== 'string' || !req.body.reason.trim())) {
+      return res.status(400).json({ message: 'Administrators must provide a renewal reason' });
+    }
+
+    const settings = await readSettings();
+    if (bloodRequest.renewalCount >= settings.maxRequestRenewals) {
+      return res.status(409).json({ message: `This request has reached the renewal limit of ${settings.maxRequestRenewals}` });
+    }
+    const previousExpiresAt = bloodRequest.expiresAt || new Date(bloodRequest.createdAt.getTime() + 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const nextExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const priorState = bloodRequest.status === 'expired' ? (bloodRequest.expiredFromStatus || 'pending') : bloodRequest.status;
+    const renewalRecord = {
+      renewedBy: req.user._id,
+      renewedAt: now,
+      reason: isAdmin ? req.body.reason.trim() : String(req.body.reason || '').trim(),
+      previousExpiresAt,
+      newExpiresAt: nextExpiresAt
+    };
+    const renewed = await BloodRequest.findOneAndUpdate(
+      {
+        _id: bloodRequest._id,
+        status: bloodRequest.status,
+        $or: [{ renewalCount: { $lt: settings.maxRequestRenewals } }, { renewalCount: { $exists: false } }]
+      },
+      {
+        $set: { status: priorState, expiredFromStatus: null, expiresAt: nextExpiresAt },
+        $inc: { renewalCount: 1 },
+        $push: { renewalHistory: renewalRecord }
+      },
+      { new: true, runValidators: true }
+    );
+    if (!renewed) return res.status(409).json({ message: 'The request changed or reached its renewal limit. Refresh and try again.' });
+    await notifyNearbyDonors(renewed, { renewed: true });
+    await renewed.populate('requester', 'fullName email phone');
+    res.json(renewed);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 export const getBloodRequests = async (req, res) => {
   try {
     const { status, bloodType, urgency, latitude, longitude, radius } = req.query;
 
     let query = {};
 
+    if (req.query.mine === 'true') query.requester = req.user._id;
+
     if (status) query.status = status;
+    if (status === 'approved') {
+      const now = new Date();
+      query.$or = [
+        { expiresAt: { $gt: now } },
+        { expiresAt: { $exists: false }, createdAt: { $gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) } }
+      ];
+    }
     if (bloodType) query.bloodType = bloodType;
     if (urgency) query.urgency = urgency;
 
@@ -90,7 +153,7 @@ export const respondToRequest = async (req, res) => {
     if (status === 'accepted') {
       const donor = await User.findById(req.user._id);
       const eligibility = getDonorEligibility(donor);
-      if (!eligibility.isEligible) {
+      if (!eligibility.passesPreliminaryChecks) {
         return res.status(400).json({ message: 'You are not currently eligible to accept a donation request', reasons: eligibility.reasons });
       }
     }
@@ -102,6 +165,14 @@ export const respondToRequest = async (req, res) => {
 
     if (bloodRequest.status !== 'approved') {
       return res.status(400).json({ message: 'Can only respond to approved requests' });
+    }
+    const effectiveExpiry = bloodRequest.expiresAt || new Date(bloodRequest.createdAt.getTime() + 24 * 60 * 60 * 1000);
+    if (effectiveExpiry <= new Date()) {
+      bloodRequest.expiredFromStatus = 'approved';
+      bloodRequest.status = 'expired';
+      bloodRequest.expiresAt = effectiveExpiry;
+      await bloodRequest.save();
+      return res.status(400).json({ message: 'This request has expired and must be renewed before you can respond' });
     }
 
     const existingResponse = bloodRequest.responses.find(
@@ -135,7 +206,7 @@ export const respondToRequest = async (req, res) => {
 export const moderateBloodRequest = async (req, res) => {
   try {
     const { status, moderationNotes } = req.body;
-    if (!['approved', 'rejected', 'fulfilled', 'expired'].includes(status)) {
+    if (!['approved', 'rejected', 'fulfilled', 'expired', 'cancelled'].includes(status)) {
       return res.status(400).json({ message: 'Invalid request status' });
     }
     const bloodRequest = await BloodRequest.findById(req.params.id);
@@ -145,6 +216,14 @@ export const moderateBloodRequest = async (req, res) => {
     }
 
     const previousStatus = bloodRequest.status;
+    const effectiveExpiry = bloodRequest.expiresAt || new Date(bloodRequest.createdAt.getTime() + 24 * 60 * 60 * 1000);
+    if (status === 'approved' && effectiveExpiry <= new Date()) {
+      bloodRequest.status = 'expired';
+      bloodRequest.expiredFromStatus = previousStatus === 'approved' ? 'approved' : 'pending';
+      bloodRequest.expiresAt = effectiveExpiry;
+      await bloodRequest.save();
+      return res.status(400).json({ message: 'This request has expired and must be renewed before approval' });
+    }
     if (status === 'fulfilled') {
       if (previousStatus !== 'approved') {
         return res.status(400).json({ message: 'Only approved requests can be marked fulfilled' });

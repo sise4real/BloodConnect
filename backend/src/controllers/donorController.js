@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import { getDonorEligibility } from '../utils/donorEligibility.js';
+import BloodRequest from '../models/BloodRequest.js';
 
 export const searchDonors = async (req, res) => {
   try {
@@ -47,12 +48,8 @@ export const searchDonors = async (req, res) => {
     locationConditions.push({
       $or: [{ lastDonation: null }, { lastDonation: { $lte: threeMonthsAgo } }]
     });
-    locationConditions.push({
-      $or: [{ 'medicalInfo.age': null }, { 'medicalInfo.age': { $gte: 18, $lte: 65 } }]
-    });
-    locationConditions.push({
-      $or: [{ 'medicalInfo.weight': null }, { 'medicalInfo.weight': { $gte: 50 } }]
-    });
+    locationConditions.push({ 'medicalInfo.age': { $gte: 18, $lte: 65 } });
+    locationConditions.push({ 'medicalInfo.weight': { $gte: 50 } });
 
     if (hasCoordinates) {
       const searchRadius = radius === undefined ? 50 : Number(radius);
@@ -134,6 +131,33 @@ export const getDonorStats = async (req, res) => {
   }
 };
 
+export const getDonationHistory = async (req, res) => {
+  try {
+    if (req.user.role !== 'donor') return res.status(403).json({ message: 'Donation history is available to donor accounts only' });
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const query = { responses: { $elemMatch: { donor: req.user._id, status: 'completed' } } };
+    const [requests, total] = await Promise.all([
+      BloodRequest.find(query).select('patientName bloodType hospital responses createdAt status')
+        .populate('requester', 'fullName')
+        .sort({ updatedAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      BloodRequest.countDocuments(query)
+    ]);
+    const donations = requests.flatMap(request => (request.responses || [])
+      .filter(response => response.status === 'completed' && String(response.donor) === String(req.user._id))
+      .map(response => ({
+        requestId: request._id,
+        patientName: request.patientName,
+        bloodType: request.bloodType,
+        hospital: request.hospital?.name,
+        completedAt: response.verifiedAt,
+        verifiedBy: response.verifiedBy,
+        requestStatus: request.status
+      })));
+    res.json({ donations, total, page, limit, totalPages: Math.ceil(total / limit) });
+  } catch (error) { res.status(400).json({ message: error.message }); }
+};
+
 export const checkEligibility = async (req, res) => {
   try {
     const donor = await User.findById(req.user._id);
@@ -146,7 +170,11 @@ export const checkEligibility = async (req, res) => {
 
     res.json({
       ...eligibility,
-      message: eligibility.isEligible ? 'You are eligible to donate!' : 'You are currently not eligible to donate',
+      message: eligibility.assessmentStatus === 'pending_assessment'
+        ? 'Complete your age and weight information to continue the preliminary assessment.'
+        : eligibility.passesPreliminaryChecks
+          ? 'Preliminary checks passed. Complete medical screening with a qualified provider before donating.'
+          : 'You do not currently meet the preliminary donation checks.',
       ...(eligibility.nextEligibleDate ? { nextEligibleDate: eligibility.nextEligibleDate } : {})
     });
   } catch (error) {

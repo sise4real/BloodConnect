@@ -36,11 +36,10 @@ const bloodBankSchema = new mongoose.Schema({
       type: String,
       enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
     },
-    units: Number,
-    lastUpdated: {
-      type: Date,
-      default: Date.now
-    }
+    units: { type: Number, min: 0, validate: Number.isInteger },
+    lastUpdated: Date,
+    lastVerifiedAt: Date,
+    verificationReminderSentAt: Date
   }],
   isVerified: {
     type: Boolean,

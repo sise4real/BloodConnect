@@ -43,7 +43,7 @@ const bloodRequestSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'fulfilled', 'expired'],
+    enum: ['pending', 'approved', 'rejected', 'fulfilled', 'expired', 'cancelled'],
     default: 'pending'
   },
   reason: {
@@ -54,6 +54,16 @@ const bloodRequestSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  expiresAt: { type: Date, index: true },
+  expiredFromStatus: { type: String, enum: ['pending', 'approved'] },
+  renewalCount: { type: Number, default: 0, min: 0 },
+  renewalHistory: [{
+    renewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    renewedAt: { type: Date, default: Date.now },
+    reason: { type: String, trim: true },
+    previousExpiresAt: Date,
+    newExpiresAt: { type: Date, required: true }
+  }],
   livesSavedCount: { type: Number, min: 1 },
   livesSavedEvidence: String,
   livesSavedVerifiedAt: Date,
@@ -94,5 +104,6 @@ const bloodRequestSchema = new mongoose.Schema({
 
 bloodRequestSchema.index({ location: '2dsphere' });
 bloodRequestSchema.index({ status: 1, createdAt: -1 });
+bloodRequestSchema.index({ status: 1, expiresAt: 1 });
 
 export default mongoose.model('BloodRequest', bloodRequestSchema);

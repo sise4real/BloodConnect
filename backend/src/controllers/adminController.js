@@ -16,6 +16,8 @@ export const getDashboardStats = async (req, res) => {
     const pendingRequests = await BloodRequest.countDocuments({ status: 'pending' });
     const approvedRequests = await BloodRequest.countDocuments({ status: 'approved' });
     const fulfilledRequests = await BloodRequest.countDocuments({ status: 'fulfilled' });
+    const cancelledRequests = await BloodRequest.countDocuments({ status: 'cancelled' });
+    const expiredRequests = await BloodRequest.countDocuments({ status: 'expired' });
     const totalRequests = await BloodRequest.countDocuments();
     const verifiedDonations = await BloodRequest.aggregate([
       { $unwind: '$responses' },
@@ -68,7 +70,9 @@ export const getDashboardStats = async (req, res) => {
         total: totalRequests,
         pending: pendingRequests,
         approved: approvedRequests,
-        fulfilled: fulfilledRequests
+        fulfilled: fulfilledRequests,
+        cancelled: cancelledRequests,
+        expired: expiredRequests
       },
       donations: { completed: verifiedDonations[0]?.count ?? 0 },
       bloodTypeDemand,
@@ -119,7 +123,7 @@ export const getAllUsers = async (req, res) => {
 
 export const updateUserStatus = async (req, res) => {
   try {
-    const { isActive, isVerified, role } = req.body;
+    const { isActive, institutionVerificationStatus, institutionReviewNote, role } = req.body;
     const user = await User.findById(req.params.id);
 
     if (!user) {
@@ -127,7 +131,25 @@ export const updateUserStatus = async (req, res) => {
     }
 
     if (isActive !== undefined) user.isActive = isActive;
-    if (isVerified !== undefined) user.isVerified = isVerified;
+    if (institutionVerificationStatus !== undefined) {
+      if (!['hospital', 'blood_bank'].includes(user.role) || !['pending', 'approved', 'rejected', 'suspended'].includes(institutionVerificationStatus)) {
+        return res.status(400).json({ message: 'Invalid institution verification update' });
+      }
+      const previousVerificationStatus = user.institutionVerificationStatus || (user.isVerified ? 'approved' : 'pending');
+      user.institutionVerificationStatus = institutionVerificationStatus;
+      user.isVerified = institutionVerificationStatus === 'approved';
+      user.institutionVerifiedAt = institutionVerificationStatus === 'approved' ? new Date() : undefined;
+      user.institutionVerifiedBy = institutionVerificationStatus === 'approved' ? req.user._id : undefined;
+      user.institutionReviewNote = typeof institutionReviewNote === 'string' ? institutionReviewNote.trim() : undefined;
+      if (previousVerificationStatus !== institutionVerificationStatus) {
+        user.institutionVerificationHistory.push({
+          status: institutionVerificationStatus,
+          changedBy: req.user._id,
+          changedAt: new Date(),
+          note: user.institutionReviewNote
+        });
+      }
+    }
     if (role) user.role = role;
 
     await user.save();
@@ -138,7 +160,8 @@ export const updateUserStatus = async (req, res) => {
       fullName: user.fullName,
       role: user.role,
       isActive: user.isActive,
-      isVerified: user.isVerified
+      isVerified: user.isVerified,
+      institutionVerificationStatus: user.institutionVerificationStatus
     });
   } catch (error) {
     res.status(400).json({ message: error.message });
